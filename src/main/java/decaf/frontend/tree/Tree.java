@@ -22,7 +22,7 @@ import java.util.Optional;
 public abstract class Tree {
     public enum Kind {
         TOP_LEVEL, CLASS_DEF, VAR_DEF, METHOD_DEF,
-        T_INT, T_BOOL, T_STRING, T_VOID, T_CLASS, T_ARRAY,
+        T_INT, T_BOOL, T_STRING, T_VOID, T_CLASS, T_ARRAY, T_FUNC, LAMBDA,
         LOCAL_VAR_DEF, BLOCK, ASSIGN, EXPR_EVAL, SKIP, IF, WHILE, FOR, BREAK, RETURN, PRINT,
         INT_LIT, BOOL_LIT, STRING_LIT, NULL_LIT, VAR_SEL, INDEX_SEL, CALL,
         THIS, UNARY_EXPR, BINARY_EXPR, READ_INT, READ_LINE, NEW_CLASS, NEW_ARRAY, CLASS_TEST, CLASS_CAST
@@ -72,6 +72,7 @@ public abstract class Tree {
         // Tree elements
         public final Id id;
         public Optional<Id> parent;
+        public Modifiers modifiers;
         public final List<Field> fields;
         // For convenience
         public final String name;
@@ -79,9 +80,20 @@ public abstract class Tree {
         public ClassDef superClass;
         public ClassSymbol symbol;
         public boolean resolved = false;
+        public boolean isAbstract = false;
+
+        public ClassDef(boolean isAbstract,Id id, Optional<Id> parent, List<Field> fields, Pos pos) {
+            super(Kind.CLASS_DEF, "ClassDef", pos);
+            this.modifiers = isAbstract ? new Modifiers(Modifiers.ABSTRACT, pos) : new Modifiers();
+            this.id = id;
+            this.parent = parent;
+            this.fields = fields;
+            this.name = id.name;
+        }
 
         public ClassDef(Id id, Optional<Id> parent, List<Field> fields, Pos pos) {
             super(Kind.CLASS_DEF, "ClassDef", pos);
+            this.modifiers = new Modifiers();
             this.id = id;
             this.parent = parent;
             this.fields = fields;
@@ -105,16 +117,17 @@ public abstract class Tree {
         @Override
         public Object treeElementAt(int index) {
             return switch (index) {
-                case 0 -> id;
-                case 1 -> parent;
-                case 2 -> fields;
+                case 0 -> modifiers;
+                case 1 -> id;
+                case 2 -> parent;
+                case 3 -> fields;
                 default -> throw new IndexOutOfBoundsException(index);
             };
         }
 
         @Override
         public int treeArity() {
-            return 3;
+            return 4;
         }
 
         @Override
@@ -188,6 +201,7 @@ public abstract class Tree {
     public static class MethodDef extends Field {
         // Tree elements
         public Modifiers modifiers;
+        public Modifiers nonemodifiers;
         public Id id;
         public TypeLit returnType;
         public List<LocalVarDef> params;
@@ -197,6 +211,7 @@ public abstract class Tree {
         // For type check
         public FunType type;
         public MethodSymbol symbol;
+        public boolean isAbstract;
 
         public MethodDef(boolean isStatic, Id id, TypeLit returnType, List<LocalVarDef> params, Block body, Pos pos) {
             super(Kind.METHOD_DEF, "MethodDef", pos);
@@ -206,21 +221,48 @@ public abstract class Tree {
             this.params = params;
             this.body = body;
             this.name = id.name;
+            this.isAbstract = false;
         }
 
+        public MethodDef(boolean isAbstract, Id id, TypeLit returnType, List<LocalVarDef> params, Pos pos )
+        {
+            super(Kind.METHOD_DEF, "MethodDef", pos);
+            this.modifiers = isAbstract ? new Modifiers(Modifiers.ABSTRACT, pos) : new Modifiers();
+            this.id = id;
+            this.returnType = returnType;
+            this.params = params;
+            this.name = id.name;
+            this.isAbstract = true;
+            this.nonemodifiers =  new Modifiers(Modifiers.NONE,pos);
+        }
         public boolean isStatic() {
             return modifiers.isStatic();
         }
 
+        public boolean isAbstract()
+        {
+            return modifiers.isAbstract();
+        }
+
         @Override
         public Object treeElementAt(int index) {
-            return switch (index) {
-                case 0 -> modifiers;
-                case 1 -> id;
-                case 2 -> returnType;
-                case 3 -> params;
-                case 4 -> body;
-                default -> throw new IndexOutOfBoundsException(index);
+            if (!isAbstract)
+                return switch (index) {
+                    case 0 -> modifiers;
+                    case 1 -> id;
+                    case 2 -> returnType;
+                    case 3 -> params;
+                    case 4 -> body;
+                    default -> throw new IndexOutOfBoundsException(index);
+            };
+            else
+                return switch (index) {
+                    case 0 -> modifiers;
+                    case 1 -> id;
+                    case 2 -> returnType;
+                    case 3 -> params;
+                    case 4 -> nonemodifiers;
+                    default -> throw new IndexOutOfBoundsException(index);
             };
         }
 
@@ -416,6 +458,38 @@ public abstract class Tree {
         }
     }
 
+    public static class TFunc extends TypeLit
+    {
+        public TypeLit returnType;
+        public List<TypeLit> typeList;
+
+        public TFunc(TypeLit returnType, List<TypeLit> typeList, Pos pos)
+        {
+            super(Kind.T_FUNC,"TLambda", pos);
+            this.returnType = returnType;
+            this.typeList = typeList;
+        }
+
+        @Override
+        public Object treeElementAt(int index) {
+            return switch (index) {
+                case 0 -> returnType;
+                case 1 -> typeList;
+                default -> throw new IndexOutOfBoundsException(index);
+            };
+        }
+
+        @Override
+        public int treeArity() {
+            return 2;
+        }
+
+        @Override
+        public <C> void accept(Visitor<C> v, C ctx) {
+            v.visitTFunc(this, ctx);
+        }
+    }
+
 
     /**
      * Statement.
@@ -448,10 +522,13 @@ public abstract class Tree {
         public Id id;
         public Pos assignPos;
         public Optional<Expr> initVal;
+        public Expr VarExpr;
         // For convenience
         public String name;
         // For type check
         public VarSymbol symbol;
+        public boolean isVar;
+        public Modifiers modifiers;
 
         public LocalVarDef(TypeLit typeLit, Id id, Pos assignPos, Optional<Expr> initVal, Pos pos) {
             // pos = id.pos, assignPos = position of the '='
@@ -462,6 +539,18 @@ public abstract class Tree {
             this.assignPos = assignPos;
             this.initVal = initVal;
             this.name = id.name;
+            this.modifiers = new Modifiers();
+            this.isVar = false;
+        }
+
+        public LocalVarDef(Id id, Expr initVal, Pos pos)
+        {
+            super(Kind.LOCAL_VAR_DEF, "LocalVarDef", pos);
+            this.id = id;
+            this.VarExpr = initVal;
+            this.name = id.name;
+            this.modifiers = new Modifiers(Modifiers.NONE, pos);
+            this.isVar = true;
         }
 
         public LocalVarDef(TypeLit typeLit, Id id, Pos pos) {
@@ -470,12 +559,22 @@ public abstract class Tree {
 
         @Override
         public Object treeElementAt(int index) {
-            return switch (index) {
-                case 0 -> typeLit;
-                case 1 -> id;
-                case 2 -> initVal;
-                default -> throw new IndexOutOfBoundsException(index);
-            };
+            if (!isVar)
+                return switch (index) {
+                    case 0 -> typeLit;
+                    case 1 -> id;
+                    case 2 -> initVal;
+                    default -> throw new IndexOutOfBoundsException(index);
+                };
+            else
+            {
+                return switch (index) {
+                    case 0 -> modifiers;
+                    case 1 -> id;
+                    case 2 -> VarExpr;
+                    default -> throw new IndexOutOfBoundsException(index);
+                };
+            }
         }
 
         @Override
@@ -886,6 +985,57 @@ public abstract class Tree {
         }
     }
 
+    public static class Lambda extends Expr
+    {
+        public List<LocalVarDef> params;
+        public Block body;
+        public Expr expr;
+        public boolean isBlock;
+
+        public Lambda(List<LocalVarDef> params, Block body, Pos pos)
+        {
+            super(Kind.LAMBDA, "Lambda", pos);
+            this.params = params;
+            this.body = body;
+            this.isBlock = true;
+        }
+
+        public Lambda(List<LocalVarDef> params, Expr expr, Pos pos)
+        {
+            super(Kind.LAMBDA, "Lambda", pos);
+            this.params = params;
+            this.expr = expr;
+            this.isBlock = false;
+        }
+
+        @Override
+        public Object treeElementAt(int index) {
+            if (isBlock)
+                return switch (index) {
+                    case 0 -> params;
+                    case 1 -> body;
+                    default -> throw new IndexOutOfBoundsException(index);
+                };
+            else
+                return switch (index) {
+                    case 0 -> params;
+                    case 1 -> expr;
+                    default -> throw new IndexOutOfBoundsException(index);
+                };
+        }
+
+        @Override
+        public int treeArity() {
+            return 2;
+        }
+
+        @Override
+        public <C> void accept(Visitor<C> v, C ctx) {
+            v.visitLambda(this, ctx);
+        }
+
+
+    }
     /**
      * Integer literal.
      */
@@ -1481,6 +1631,8 @@ public abstract class Tree {
         public String methodName;
         // For type check
         public MethodSymbol symbol;
+
+        public Expr expr;
         public boolean isArrayLength = false;
 
         public Call(Optional<Expr> receiver, Id method, List<Expr> args, Pos pos) {
@@ -1499,6 +1651,12 @@ public abstract class Tree {
             this(Optional.of(receiver), method, args, pos);
         }
 
+        public Call(Expr expr, List<Expr> args, Pos pos)
+        {
+            super(Kind.CALL, "Call", pos);
+            this.expr = expr;
+            this.args = args;
+        }
         /**
          * Set its receiver as {@code this}.
          * <p>
@@ -1511,16 +1669,15 @@ public abstract class Tree {
         @Override
         public Object treeElementAt(int index) {
             return switch (index) {
-                case 0 -> receiver;
-                case 1 -> method;
-                case 2 -> args;
+                case 0 -> expr;
+                case 1 -> args;
                 default -> throw new IndexOutOfBoundsException(index);
             };
         }
 
         @Override
         public int treeArity() {
-            return 3;
+            return 2;
         }
 
         @Override
@@ -1566,12 +1723,16 @@ public abstract class Tree {
 
         // Available modifiers:
         public static final int STATIC = 1;
+        public static final int ABSTRACT = 2;
+        public static final int NONE = 3;
 
         public Modifiers(int code, Pos pos) {
             this.code = code;
             this.pos = pos;
             flags = new ArrayList<>();
             if (isStatic()) flags.add("STATIC");
+            if (isAbstract()) flags.add("ABSTRACT");
+            if (isNone()) flags.add("<none>");
         }
 
         public Modifiers() {
@@ -1579,9 +1740,18 @@ public abstract class Tree {
         }
 
         public boolean isStatic() {
-            return (code & 1) == 1;
+            return code == 1;
         }
 
+        public boolean isAbstract()
+        {
+            return code == 2;
+        }
+
+        public boolean isNone()
+        {
+            return code == 3;
+        }
         @Override
         public String toString() {
             return String.join(" ", flags);
