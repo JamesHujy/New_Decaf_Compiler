@@ -11,27 +11,24 @@ java.util.*
 %start TopLevel
 
 %tokens
-VOID         BOOL        INT         STRING      CLASS
-NULL         EXTENDS     THIS        WHILE       FOR
-IF           ELSE        RETURN      BREAK       NEW
-PRINT        READ_INTEGER            READ_LINE
-BOOL_LIT     INT_LIT     STRING_LIT
-IDENTIFIER   AND         OR          STATIC      INSTANCE_OF
+VOID         BOOL         INT         STRING      CLASS
+NULL         EXTENDS      THIS        WHILE       FOR
+IF           ELSE         RETURN      BREAK       NEW
+PRINT        READ_INTEGER INFER         READ_LINE   VAR
+BOOL_LIT     INT_LIT      STRING_LIT  FUN         ABSTRACT
+IDENTIFIER   AND          OR          STATIC      INSTANCE_OF
 LESS_EQUAL   GREATER_EQUAL           EQUAL       NOT_EQUAL
 '+'  '-'  '*'  '/'  '%'  '='  '>'  '<'  '.'
 ','  ';'  '!'  '('  ')'  '['  ']'  '{'  '}'
 
 %%
-
 TopLevel        :   ClassDef ClassList
                     {
                         $$ = svClasses($1.clazz);
                         $$.classList.addAll($2.classList);
-
                         tree = new TopLevel($$.classList, $$.pos);
                     }
                 ;
-
 ClassList       :   ClassDef ClassList
                     {
                         $$ = $2;
@@ -42,13 +39,11 @@ ClassList       :   ClassDef ClassList
                         $$ = svClasses();
                     }
                 ;
-
 ClassDef        :   CLASS Id ExtendsClause '{' FieldList '}'
                     {
                         $$ = svClass(new ClassDef($2.id, Optional.ofNullable($3.id), $5.fieldList, $1.pos));
                     }
                 ;
-
 ExtendsClause   :   EXTENDS Id
                     {
                         $$ = $2;
@@ -58,7 +53,6 @@ ExtendsClause   :   EXTENDS Id
                         $$ = svId(null);
                     }
                 ;
-
 FieldList       :   STATIC Type Id '(' VarList ')' Block FieldList
                     {
                         $$ = $8;
@@ -78,7 +72,6 @@ FieldList       :   STATIC Type Id '(' VarList ')' Block FieldList
                         $$ = svFields();
                     }
                 ;
-
 AfterIdField    :   ';'
                     {
                         $$ = new SemValue();
@@ -90,13 +83,11 @@ AfterIdField    :   ';'
                         $$.block = $4.block;
                     }
                 ;
-
 Var             :   Type Id
                     {
                         $$ = svVar($1.type, $2.id, $2.pos);
                     }
                 ;
-
 VarList         :   Var VarList1
                     {
                         $$ = $2;
@@ -107,7 +98,6 @@ VarList         :   Var VarList1
                         $$ = svVars();
                     }
                 ;
-
 VarList1        :   ',' Var VarList1
                     {
                         $$ = $3;
@@ -118,9 +108,7 @@ VarList1        :   ',' Var VarList1
                         $$ = svVars();
                     }
                 ;
-
 // Types
-
 AtomType        :   INT
                     {
                         $$ = svType(new TInt($1.pos));
@@ -142,7 +130,6 @@ AtomType        :   INT
                         $$ = svType(new TClass($2.id, $1.pos));
                     }
                 ;
-
 Type            :   AtomType ArrayType
                     {
                         $$ = $1;
@@ -151,7 +138,6 @@ Type            :   AtomType ArrayType
                         }
                     }
                 ;
-
 ArrayType       :   '[' ']' ArrayType
                     {
                         $$ = $3;
@@ -163,9 +149,7 @@ ArrayType       :   '[' ']' ArrayType
                         $$.intVal = 0; // counter
                     }
                 ;
-
 // Statements
-
 Stmt            :   Block
                     {
                         $$ = svStmt($1.block);
@@ -205,13 +189,11 @@ Stmt            :   Block
                         $$ = svStmt(new Print($3.exprList, $1.pos));
                     }
                 ;
-
 Block           :   '{' StmtList '}'
                     {
                         $$ = svBlock(new Block($2.stmtList, $1.pos));
                     }
                 ;
-
 StmtList        :   Stmt StmtList
                     {
                         $$ = $2;
@@ -222,7 +204,6 @@ StmtList        :   Stmt StmtList
                         $$ = svStmts();
                     }
                 ;
-
 SimpleStmt      :   Var Initializer
                     {
                         $$ = svStmt(new LocalVarDef($1.type, $1.id, $2.pos, Optional.ofNullable($2.expr), $1.pos));
@@ -245,7 +226,6 @@ SimpleStmt      :   Var Initializer
                         $$ = svStmt(null);
                     }
                 ;
-
 Initializer     :   '=' Expr
                     {
                         $$ = svExpr($2.expr);
@@ -256,7 +236,6 @@ Initializer     :   '=' Expr
                         $$ = svExpr(null);
                     }
                 ;
-
 ElseClause      :   ELSE Stmt // higher priority, which triggers a warning (that is expected)
                     {
                         $$ = $2;
@@ -266,7 +245,6 @@ ElseClause      :   ELSE Stmt // higher priority, which triggers a warning (that
                         $$ = svStmt(null);
                     }
                 ;
-
 ExprOpt         :   Expr
                     {
                         $$ = $1;
@@ -276,9 +254,7 @@ ExprOpt         :   Expr
                         $$ = svExpr(null);
                     }
                 ;
-
 // Operators
-
 Op1             :   OR
                     {
                         $$ = new SemValue();
@@ -286,7 +262,6 @@ Op1             :   OR
                         $$.code = BinaryOp.OR.ordinal();
                     }
                 ;
-
 Op2             :   AND
                     {
                         $$ = new SemValue();
@@ -294,7 +269,6 @@ Op2             :   AND
                         $$.code = BinaryOp.AND.ordinal();
                     }
                 ;
-
 Op3             :   EQUAL
                     {
                         $$ = new SemValue();
@@ -308,7 +282,6 @@ Op3             :   EQUAL
                         $$.code = BinaryOp.NE.ordinal();
                     }
                 ;
-
 Op4             :   LESS_EQUAL
                     {
                         $$ = new SemValue();
@@ -334,7 +307,6 @@ Op4             :   LESS_EQUAL
                         $$.code = BinaryOp.GT.ordinal();
                     }
                 ;
-
 Op5             :   '+'
                     {
                         $$ = new SemValue();
@@ -348,7 +320,6 @@ Op5             :   '+'
                         $$.code = BinaryOp.SUB.ordinal();
                     }
                 ;
-
 Op6           :   '*'
                     {
                         $$ = new SemValue();
@@ -368,7 +339,6 @@ Op6           :   '*'
                         $$.code = BinaryOp.MOD.ordinal();
                     }
                 ;
-
 Op7             :   '-'
                     {
                         $$ = new SemValue();
@@ -382,28 +352,23 @@ Op7             :   '-'
                         $$.code = UnaryOp.NOT.ordinal();
                     }
                 ;
-
 // Expressions
-
 Expr            :   Expr1
                     {
                         $$ = $1;
                     }
                 ;
-
 Expr1           :   Expr2 ExprT1
                     {
                         $$ = buildBinaryExpr($1, $2.thunkList);
                     }
                 ;
-
 ExprT1          :   Op1 Expr2 ExprT1
                     {
                         var sv = new SemValue();
                         sv.code = $1.code;
                         sv.pos = $1.pos;
                         sv.expr = $2.expr;
-
                         $$ = $3;
                         $$.thunkList.add(0, sv);
                     }
@@ -413,20 +378,17 @@ ExprT1          :   Op1 Expr2 ExprT1
                         $$.thunkList = new ArrayList<>();
                     }
                 ;
-
 Expr2           :   Expr3 ExprT2
                     {
                         $$ = buildBinaryExpr($1, $2.thunkList);
                     }
                 ;
-
 ExprT2          :   Op2 Expr3 ExprT2
                     {
                         var sv = new SemValue();
                         sv.code = $1.code;
                         sv.pos = $1.pos;
                         sv.expr = $2.expr;
-
                         $$ = $3;
                         $$.thunkList.add(0, sv);
                     }
@@ -436,20 +398,17 @@ ExprT2          :   Op2 Expr3 ExprT2
                         $$.thunkList = new ArrayList<>();
                     }
                 ;
-
 Expr3           :   Expr4 ExprT3
                     {
                         $$ = buildBinaryExpr($1, $2.thunkList);
                     }
                 ;
-
 ExprT3          :   Op3 Expr4 ExprT3
                     {
                         var sv = new SemValue();
                         sv.code = $1.code;
                         sv.pos = $1.pos;
                         sv.expr = $2.expr;
-
                         $$ = $3;
                         $$.thunkList.add(0, sv);
                     }
@@ -459,20 +418,17 @@ ExprT3          :   Op3 Expr4 ExprT3
                         $$.thunkList = new ArrayList<>();
                     }
                 ;
-
 Expr4           :   Expr5 ExprT4
                     {
                         $$ = buildBinaryExpr($1, $2.thunkList);
                     }
                 ;
-
 ExprT4          :   Op4 Expr5 ExprT4
                     {
                         var sv = new SemValue();
                         sv.code = $1.code;
                         sv.pos = $1.pos;
                         sv.expr = $2.expr;
-
                         $$ = $3;
                         $$.thunkList.add(0, sv);
                     }
@@ -482,20 +438,17 @@ ExprT4          :   Op4 Expr5 ExprT4
                         $$.thunkList = new ArrayList<>();
                     }
                 ;
-
 Expr5           :   Expr6 ExprT5
                     {
                         $$ = buildBinaryExpr($1, $2.thunkList);
                     }
                 ;
-
 ExprT5          :   Op5 Expr6 ExprT5
                     {
                         var sv = new SemValue();
                         sv.code = $1.code;
                         sv.pos = $1.pos;
                         sv.expr = $2.expr;
-
                         $$ = $3;
                         $$.thunkList.add(0, sv);
                     }
@@ -505,20 +458,17 @@ ExprT5          :   Op5 Expr6 ExprT5
                         $$.thunkList = new ArrayList<>();
                     }
                 ;
-
 Expr6           :   Expr7 ExprT6
                     {
                         $$ = buildBinaryExpr($1, $2.thunkList);
                     }
                 ;
-
 ExprT6          :   Op6 Expr7 ExprT6
                     {
                         var sv = new SemValue();
                         sv.code = $1.code;
                         sv.pos = $1.pos;
                         sv.expr = $2.expr;
-
                         $$ = $3;
                         $$.thunkList.add(0, sv);
                     }
@@ -528,17 +478,38 @@ ExprT6          :   Op6 Expr7 ExprT6
                         $$.thunkList = new ArrayList<>();
                     }
                 ;
-
-Expr7           :   Op7 Expr8
+Expr7           :   Op7 Expr7
                     {
                         $$ = svExpr(new Unary(UnaryOp.values()[$1.code], $2.expr, $1.pos));
+                    }
+                |   '(' AfterLParen
+                    {
+                        $$ = $2;
                     }
                 |   Expr8
                     {
                         $$ = $1;
                     }
                 ;
-
+AfterLParen     :   CLASS Id ')' Expr7
+                    {
+                        $$ = svExpr(new ClassCast($4.expr, $2.id, $4.pos));
+                    }
+                |   Expr ')' ExprT8
+                    {
+                        $$ = $1;
+                        for (var sv : $3.thunkList) {
+                            if (sv.expr != null) {
+                                $$ = svExpr(new IndexSel($$.expr, sv.expr, sv.pos));
+                            } else if (sv.exprList != null) {
+                                $$ = svExpr(new Call($$.expr, sv.id, sv.exprList, sv.pos));
+                            } else {
+                                $$ = svExpr(new VarSel($$.expr, sv.id, sv.pos));
+                            }
+                        }
+                        $$.pos = $$.expr.pos;
+                    }
+                ;
 Expr8           :   Expr9 ExprT8
                     {
                         $$ = $1;
@@ -554,13 +525,11 @@ Expr8           :   Expr9 ExprT8
                         $$.pos = $$.expr.pos;
                     }
                 ;
-
 ExprT8          :   '[' Expr ']' ExprT8
                     {
                         var sv = new SemValue();
                         sv.expr = $2.expr;
                         sv.pos = $1.pos;
-
                         $$ = $4;
                         $$.thunkList.add(0, sv);
                     }
@@ -573,7 +542,6 @@ ExprT8          :   '[' Expr ']' ExprT8
                             sv.exprList = $3.exprList;
                             sv.pos = $3.pos;
                         }
-
                         $$ = $4;
                         $$.thunkList.add(0, sv);
                     }
@@ -583,7 +551,6 @@ ExprT8          :   '[' Expr ']' ExprT8
                         $$.thunkList = new ArrayList<>();
                     }
                 ;
-
 ExprListOpt     :   '(' ExprList ')'
                     {
                         $$ = $2;
@@ -594,7 +561,6 @@ ExprListOpt     :   '(' ExprList ')'
                         $$ = new SemValue();
                     }
                 ;
-
 Expr9           :   Literal
                     {
                         $$ = $1;
@@ -623,10 +589,6 @@ Expr9           :   Literal
                             $$ = svExpr(new NewArray($2.type, $2.expr, $1.pos));
                         }
                     }
-                |   '(' AfterParenExpr
-                    {
-                        $$ = $2;
-                    }
                 |   Id ExprListOpt
                     {
                         if ($2.exprList != null) {
@@ -636,7 +598,6 @@ Expr9           :   Literal
                         }
                     }
                 ;
-
 Literal         :   INT_LIT
                     {
                         $$ = svExpr(new IntLit($1.intVal, $1.pos));
@@ -654,7 +615,6 @@ Literal         :   INT_LIT
                         $$ = svExpr(new NullLit($1.pos));
                     }
                 ;
-
 AfterNewExpr    :   Id '(' ')'
                     {
                         $$ = svId($1.id);
@@ -668,7 +628,6 @@ AfterNewExpr    :   Id '(' ')'
                         $$.expr = $3.expr;
                     }
                 ;
-
 AfterLBrack     :   ']' '[' AfterLBrack
                     {
                         $$ = $3;
@@ -680,17 +639,6 @@ AfterLBrack     :   ']' '[' AfterLBrack
                         $$.intVal = 0; // counter
                     }
                 ;
-
-AfterParenExpr  :   Expr ')'
-                    {
-                        $$ = $1;
-                    }
-                |   CLASS Id ')' Expr9
-                    {
-                        $$ = svExpr(new ClassCast($4.expr, $2.id, $4.pos));
-                    }
-                ;
-
 ExprList        :   Expr ExprList1
                     {
                         $$ = $2;
@@ -701,7 +649,6 @@ ExprList        :   Expr ExprList1
                         $$ = svExprs();
                     }
                 ;
-
 ExprList1       :   ',' Expr ExprList1
                     {
                         $$ = $3;
@@ -712,9 +659,7 @@ ExprList1       :   ',' Expr ExprList1
                         $$ = svExprs();
                     }
                 ;
-
 // identifier
-
 Id              :   IDENTIFIER
                     {
                         $$ = svId(new Id($1.strVal, $1.pos));
