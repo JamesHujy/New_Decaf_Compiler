@@ -41,7 +41,12 @@ ClassList       :   ClassDef ClassList
                 ;
 ClassDef        :   CLASS Id ExtendsClause '{' FieldList '}'
                     {
-                        $$ = svClass(new ClassDef($2.id, Optional.ofNullable($3.id), $5.fieldList, $1.pos));
+                        $$ = svClass(new ClassDef(false, $2.id, Optional.ofNullable($3.id), $5.fieldList, $1.pos));
+                    }
+
+                |   ABSTRACT CLASS Id ExtendsClause '{' FieldList '}'
+                    {
+                        $$ = svClass(new ClassDef(true, $3.id, Optional.ofNullable($4.id), $6.fieldList, $2.pos));
                     }
                 ;
 ExtendsClause   :   EXTENDS Id
@@ -58,6 +63,13 @@ FieldList       :   STATIC Type Id '(' VarList ')' Block FieldList
                         $$ = $8;
                         $$.fieldList.add(0, new MethodDef(true, $3.id, $2.type, $5.varList, $7.block, $3.pos));
                     }
+
+                |   ABSTRACT Type Id '(' VarList ')' ';' FieldList
+                    {
+                        $$ = $8;
+                        $$.fieldList.add(0, new MethodDef(true, $3.id, $2.type, $5.varList, $3.pos));
+                    }
+
                 |   Type Id AfterIdField FieldList
                     {
                         $$ = $4;
@@ -221,6 +233,12 @@ SimpleStmt      :   Var Initializer
                             $$ = svStmt(new ExprEval($1.expr, $1.pos));
                         }
                     }
+
+                |   VAR Id '=' Expr
+                    {
+                        $$ = svStmt(new LocalVarDef($2.id, $4.expr, $2.pos));
+                    }
+
                 |   /* empty */
                     {
                         $$ = svStmt(null);

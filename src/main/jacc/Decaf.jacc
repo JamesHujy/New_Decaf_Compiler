@@ -273,6 +273,7 @@ SimpleStmt      :   Var Initializer
                     {
                         $$ = svStmt(null);
                     }
+
                 |   VAR Id '=' Expr
                     {
                         $$ = svStmt(new LocalVarDef($2.id, $4.expr, $2.pos));
