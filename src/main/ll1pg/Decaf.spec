@@ -424,11 +424,6 @@ Lambda          :   FUN '(' VarList ')' Lambda2
                             $$ = svExpr(new Lambda($3.varList, $5.expr, $1.pos));
                         }
                     }
-                |   /* empty */
-                    {
-                        $$ = new SemValue();
-                        $$.thunkList = new ArrayList<>();
-                    }
                 ;
 Lambda2         :   INFER Expr
                     {
