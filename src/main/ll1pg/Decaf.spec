@@ -142,25 +142,68 @@ AtomType        :   INT
                         $$ = svType(new TClass($2.id, $1.pos));
                     }
                 ;
+
 Type            :   AtomType ArrayType
                     {
                         $$ = $1;
-                        for (int i = 0; i < $2.intVal; i++) {
-                            $$.type = new TArray($$.type, $1.type.pos);
+                        for (var sv: $2.thunkList)
+                        {
+                            if(sv.hasFunc == 1)
+                            {
+                                $$.type = new TFunc($$.type, sv.typeList, $1.type.pos);
+                            }
+                            else
+                            {
+                                $$.type = new TArray($$.type, $1.type.pos);
+                            }
                         }
                     }
                 ;
+
 ArrayType       :   '[' ']' ArrayType
                     {
                         $$ = $3;
-                        $$.intVal++;
+                        var sv = new SemValue();
+                        sv.hasFunc = 0;
+                        $$.thunkList.add(0, sv);
+                    }
+                |   '(' TypeList ')' ArrayType
+                    {
+                        $$ = $4;
+                        var sv = new SemValue();
+                        sv.hasFunc = 1;
+                        sv.typeList = $2.typeList;
+                        $$.thunkList.add(0, sv);
                     }
                 |   /* empty */
                     {
                         $$ = new SemValue();
-                        $$.intVal = 0; // counter
+                        $$.thunkList = new ArrayList<>();
                     }
                 ;
+
+TypeList        :   Type TypeList1
+                    {
+                        $$ = $2;
+                        $$.typeList.add(0, $1.type);
+                    }
+                |   /* empty */
+                    {
+                        $$ = svTypes();
+                    }
+                ;
+
+TypeList1       :   ',' Type TypeList1
+                    {
+                        $$ = $3;
+                        $$.typeList.add(0, $2.type);
+                    }
+                |   /* empty */
+                    {
+                        $$ = svTypes();
+                    }
+                ;
+
 // Statements
 Stmt            :   Block
                     {
@@ -375,7 +418,45 @@ Expr            :   Expr1
                     {
                         $$ = $1;
                     }
+                |   Lambda
+                    {
+                        $$ = $1;
+                    }
                 ;
+
+Lambda          :   FUN '(' VarList ')' Lambda2
+                    {
+                        if ($5.hasBlock == 1)
+                        {
+                            $$ = svExpr(new Lambda($3.varList, $5.block, $1.pos));
+                        }
+                        else
+                        {
+                            $$ = svExpr(new Lambda($3.varList, $5.expr, $1.pos));
+                        }
+                    }
+
+                |   /* empty */
+                    {
+                        $$ = new SemValue();
+                        $$.thunkList = new ArrayList<>();
+                    }
+                ;
+
+Lambda2         :   INFER Expr
+                    {
+                        $$ = new SemValue();
+                        $$.hasBlock = 0;
+                        $$.expr = $2.expr;
+                    }
+                |   Block
+                    {
+                        $$ = new SemValue();
+                        $$.hasBlock = 1;
+                        $$.block = $1.block;
+                    }
+                ;
+
 Expr1           :   Expr2 ExprT1
                     {
                         $$ = buildBinaryExpr($1, $2.thunkList);
@@ -557,8 +638,8 @@ ExprT8          :   '[' Expr ']' ExprT8
                         sv.id = $2.id;
                         sv.pos = $2.pos;
                         if ($3.exprList != null) {
-                            sv.exprList = $3.exprList;
-                            sv.pos = $3.pos;
+                           sv.exprList = $3.exprList;
+                           sv.pos = $3.pos;
                         }
                         $$ = $4;
                         $$.thunkList.add(0, sv);

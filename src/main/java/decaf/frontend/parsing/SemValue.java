@@ -48,6 +48,8 @@ class SemValue {
     int code;
     int intVal;
     boolean boolVal;
+    int hasBlock;
+    int hasFunc;
     String strVal;
 
     /**
