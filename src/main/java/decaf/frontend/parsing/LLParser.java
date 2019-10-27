@@ -60,7 +60,6 @@ public class LLParser extends Phase<InputStream, Tree.TopLevel> {
                 return;
             }
         }
-
         super.issue(error);
     }
 

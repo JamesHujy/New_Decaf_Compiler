@@ -50,6 +50,7 @@ class SemValue {
     boolean boolVal;
     int hasBlock;
     int hasFunc;
+    int hasID;
     String strVal;
 
     /**

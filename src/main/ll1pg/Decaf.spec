@@ -576,6 +576,7 @@ Expr7           :   Op7 Expr7
                         $$ = $1;
                     }
                 ;
+
 AfterLParen     :   CLASS Id ')' Expr7
                     {
                         $$ = svExpr(new ClassCast($4.expr, $2.id, $4.pos));
@@ -602,7 +603,12 @@ Expr8           :   Expr9 ExprT8
                             if (sv.expr != null) {
                                 $$ = svExpr(new IndexSel($$.expr, sv.expr, sv.pos));
                             } else if (sv.exprList != null) {
-                                $$ = svExpr(new Call($$.expr, sv.exprList, sv.pos));
+                                if (sv.hasID == 0){
+                                    $$ = svExpr(new Call($$.expr, sv.exprList, sv.pos));
+                                }
+                                else {
+                                    $$ = svExpr(new Call($$.expr, sv.id, sv.exprList, sv.pos));
+                                }
                             } else {
                                 $$ = svExpr(new VarSel($$.expr, sv.id, sv.pos));
                             }
@@ -610,6 +616,7 @@ Expr8           :   Expr9 ExprT8
                         $$.pos = $$.expr.pos;
                     }
                 ;
+
 ExprT8          :   '[' Expr ']' ExprT8
                     {
                         var sv = new SemValue();
@@ -618,24 +625,25 @@ ExprT8          :   '[' Expr ']' ExprT8
                         $$ = $4;
                         $$.thunkList.add(0, sv);
                     }
-                |   '.' Id ExprListOpt ExprT8
+                |   '.' Id ExprT8
                     {
                         var sv = new SemValue();
                         sv.id = $2.id;
                         sv.pos = $2.pos;
-                        if ($3.exprList != null) {
-                            sv.exprList = $3.exprList;
-                            sv.pos = $3.pos;
-                        }
-                        $$ = $4;
+                        sv.hasID = 1;
+                        sv.exprList = $3.exprList;
+                        $$ = $3;
                         $$.thunkList.add(0, sv);
                      }
                 |   '(' ExprList ')' ExprT8
                     {
                         var sv = new SemValue();
                         sv.pos = $1.pos;
-                        sv.exprList = $3.exprList;
+                        sv.hasID = 0;
+                        sv.exprList = $2.exprList;
+
                         $$ = $4;
+
                         $$.thunkList.add(0, sv);
                     }
                 |   /* empty */
@@ -644,16 +652,7 @@ ExprT8          :   '[' Expr ']' ExprT8
                         $$.thunkList = new ArrayList<>();
                     }
                 ;
-ExprListOpt     :   '(' ExprList ')'
-                    {
-                        $$ = $2;
-                        $$.pos = $1.pos;
-                    }
-                |   /* empty */
-                    {
-                        $$ = new SemValue();
-                    }
-                ;
+
 Expr9           :   Literal
                     {
                         $$ = $1;
