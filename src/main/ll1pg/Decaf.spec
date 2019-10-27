@@ -588,7 +588,7 @@ AfterLParen     :   CLASS Id ')' Expr7
                             if (sv.expr != null) {
                                 $$ = svExpr(new IndexSel($$.expr, sv.expr, sv.pos));
                             } else if (sv.exprList != null) {
-                                $$ = svExpr(new Call($$.expr, sv.id, sv.exprList, sv.pos));
+                                $$ = svExpr(new Call($$.expr, sv.exprList, sv.pos));
                             } else {
                                 $$ = svExpr(new VarSel($$.expr, sv.id, sv.pos));
                             }
@@ -602,14 +602,11 @@ Expr8           :   Expr9 ExprT8
                         for (var sv : $2.thunkList) {
                             if (sv.expr != null) {
                                 $$ = svExpr(new IndexSel($$.expr, sv.expr, sv.pos));
-                            } else if (sv.exprList != null) {
-                                if (sv.hasID == 0){
-                                    $$ = svExpr(new Call($$.expr, sv.exprList, sv.pos));
-                                }
-                                else {
-                                    $$ = svExpr(new Call($$.expr, sv.id, sv.exprList, sv.pos));
-                                }
-                            } else {
+                            }
+                            else if (sv.exprList != null) {
+                                $$ = svExpr(new Call($$.expr, sv.exprList, sv.pos));
+                            }
+                            else {
                                 $$ = svExpr(new VarSel($$.expr, sv.id, sv.pos));
                             }
                         }
@@ -630,8 +627,7 @@ ExprT8          :   '[' Expr ']' ExprT8
                         var sv = new SemValue();
                         sv.id = $2.id;
                         sv.pos = $2.pos;
-                        sv.hasID = 1;
-                        sv.exprList = $3.exprList;
+
                         $$ = $3;
                         $$.thunkList.add(0, sv);
                      }
@@ -639,11 +635,8 @@ ExprT8          :   '[' Expr ']' ExprT8
                     {
                         var sv = new SemValue();
                         sv.pos = $1.pos;
-                        sv.hasID = 0;
                         sv.exprList = $2.exprList;
-
                         $$ = $4;
-
                         $$.thunkList.add(0, sv);
                     }
                 |   /* empty */
@@ -728,6 +721,7 @@ AfterLBrack     :   ']' '[' AfterLBrack
                         $$.intVal = 0; // counter
                     }
                 ;
+
 ExprList        :   Expr ExprList1
                     {
                         $$ = $2;
