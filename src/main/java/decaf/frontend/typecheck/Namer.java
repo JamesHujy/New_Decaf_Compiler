@@ -319,5 +319,4 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
     public void visitWhile(Tree.While loop, ScopeStack ctx) {
         loop.body.accept(this, ctx);
     }
-
 }
