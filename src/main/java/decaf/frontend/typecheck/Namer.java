@@ -87,7 +87,7 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         //  static void main() { ... }
         boolean found = false;
         for (var clazz : classes.values()) {
-            if (clazz.name.equals("Main")) {
+            if (clazz.name.equals("Main") && !clazz.isAbstract) {
                 var symbol = clazz.symbol.scope.find("main");
                 if (symbol.isPresent() && symbol.get().isMethodSymbol()) {
                     var method = (MethodSymbol) symbol.get();
@@ -158,13 +158,13 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             var base = global.getClass(clazz.parent.get().name);
             var type = new ClassType(clazz.name, base.type);
             var scope = new ClassScope(base.scope);
-            var symbol = new ClassSymbol(clazz.name, base, type, scope, clazz.pos);
+            var symbol = new ClassSymbol(clazz.isAbstract, clazz.name, base, type, scope, clazz.pos);
             global.declare(symbol);
             clazz.symbol = symbol;
         } else {
             var type = new ClassType(clazz.name);
             var scope = new ClassScope();
-            var symbol = new ClassSymbol(clazz.name, type, scope, clazz.pos);
+            var symbol = new ClassSymbol(clazz.isAbstract, clazz.name, type, scope, clazz.pos);
             global.declare(symbol);
             clazz.symbol = symbol;
         }
@@ -181,6 +181,18 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         ctx.open(clazz.symbol.scope);
         for (var field : clazz.fields) {
             field.accept(this, ctx);
+        }
+        for (var symbol : clazz.symbol.scope)
+        {
+            if(symbol.isMethodSymbol())
+            {
+                var methodSymbol = (MethodSymbol) symbol;
+                if(methodSymbol.isAbstract() && !clazz.isAbstract)
+                {
+                    issue(new BadAbstractMethodError(clazz.pos, clazz.name));
+                    break;
+                }
+            }
         }
         ctx.close();
         clazz.resolved = true;
@@ -228,7 +240,8 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                         ctx.declare(symbol);
                         method.symbol = symbol;
                         ctx.open(formal);
-                        method.body.accept(this, ctx);
+                        if(!method.isAbstract())
+                            method.body.accept(this, ctx);
                         ctx.close();
                     } else {
                         issue(new BadOverrideError(method.pos, method.name, suspect.owner.name));
@@ -241,7 +254,6 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             issue(new DeclConflictError(method.pos, method.name, earlier.get().pos));
             return;
         }
-
         var formal = new FormalScope();
         typeMethod(method, ctx, formal);
         var symbol = new MethodSymbol(method.name, method.type, formal, method.pos, method.modifiers,
@@ -249,7 +261,10 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         ctx.declare(symbol);
         method.symbol = symbol;
         ctx.open(formal);
-        method.body.accept(this, ctx);
+        if(!method.isAbstract())
+        {
+            method.body.accept(this, ctx);
+        }
         ctx.close();
     }
 

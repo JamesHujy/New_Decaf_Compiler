@@ -18,24 +18,28 @@ public final class ClassSymbol extends Symbol {
 
     public final ClassType type;
 
+    public final boolean isAbstract;
+
     /**
      * Associated class scope of this class.
      */
     public final ClassScope scope;
 
-    public ClassSymbol(String name, ClassType type, ClassScope scope, Pos pos) {
+    public ClassSymbol(boolean isAbstract, String name, ClassType type, ClassScope scope, Pos pos) {
         super(name, type, pos);
         this.parentSymbol = Optional.empty();
         this.scope = scope;
         this.type = type;
+        this.isAbstract = isAbstract;
         scope.setOwner(this);
     }
 
-    public ClassSymbol(String name, ClassSymbol parentSymbol, ClassType type, ClassScope scope, Pos pos) {
+    public ClassSymbol(boolean isAbstract, String name, ClassSymbol parentSymbol, ClassType type, ClassScope scope, Pos pos) {
         super(name, type, pos);
         this.parentSymbol = Optional.of(parentSymbol);
         this.scope = scope;
         this.type = type;
+        this.isAbstract = isAbstract;
         scope.setOwner(this);
     }
 
@@ -67,7 +71,10 @@ public final class ClassSymbol extends Symbol {
 
     @Override
     protected String str() {
-        return "class " + name + parentSymbol.map(classSymbol -> " : " + classSymbol.name).orElse("");
+        if (!this.isAbstract)
+            return "class " + name + parentSymbol.map(classSymbol -> " : " + classSymbol.name).orElse("");
+        else
+            return "ABSTRACT class " + name + parentSymbol.map(classSymbol -> " : " + classSymbol.name).orElse("");
     }
 
     /**
@@ -76,6 +83,7 @@ public final class ClassSymbol extends Symbol {
      * @return class info
      * @see decaf.lowlevel.tac.ClassInfo
      */
+
     public ClassInfo getInfo() {
         var memberVariables = new TreeSet<String>();
         var memberMethods = new TreeSet<String>();

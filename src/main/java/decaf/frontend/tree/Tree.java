@@ -80,10 +80,11 @@ public abstract class Tree {
         public ClassDef superClass;
         public ClassSymbol symbol;
         public boolean resolved = false;
-        public boolean isAbstract = false;
+        public boolean isAbstract;
 
         public ClassDef(boolean isAbstract,Id id, Optional<Id> parent, List<Field> fields, Pos pos) {
             super(Kind.CLASS_DEF, "ClassDef", pos);
+            this.isAbstract = isAbstract;
             this.modifiers = isAbstract ? new Modifiers(Modifiers.ABSTRACT, pos) : new Modifiers();
             this.id = id;
             this.parent = parent;
