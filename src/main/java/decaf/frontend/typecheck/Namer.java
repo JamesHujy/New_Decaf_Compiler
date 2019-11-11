@@ -182,15 +182,33 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         for (var field : clazz.fields) {
             field.accept(this, ctx);
         }
-        for (var symbol : clazz.symbol.scope)
+
+        boolean hasAbstractError = false;
+        if(!clazz.isAbstract && clazz.hasParent())
         {
-            if(symbol.isMethodSymbol())
+            var parentAbstract = clazz.superClass.symbol.getAbstractMethod();
+            for(var method:parentAbstract)
             {
-                var methodSymbol = (MethodSymbol) symbol;
-                if(methodSymbol.isAbstract() && !clazz.isAbstract)
+                if(!clazz.symbol.scope.containsKey(method))
                 {
                     issue(new BadAbstractMethodError(clazz.pos, clazz.name));
+                    hasAbstractError = true;
                     break;
+                }
+            }
+        }
+        if(!hasAbstractError)
+        {
+            for (var symbol : clazz.symbol.scope)
+            {
+                if(symbol.isMethodSymbol())
+                {
+                    var methodSymbol = (MethodSymbol) symbol;
+                    if(methodSymbol.isAbstract() && !clazz.isAbstract)
+                    {
+                        issue(new BadAbstractMethodError(clazz.pos, clazz.name));
+                        break;
+                    }
                 }
             }
         }
@@ -230,6 +248,10 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         if (earlier.isPresent()) {
             if (earlier.get().isMethodSymbol()) { // may be overriden
                 var suspect = (MethodSymbol) earlier.get();
+                if(!suspect.isAbstract() && method.isAbstract())
+                {
+                    issue(new DeclConflictError(method.pos, method.name, earlier.get().pos));
+                }
                 if (suspect.domain() != ctx.currentScope() && !suspect.isStatic() && !method.isStatic()) {
                     // Only non-static methods can be overriden, but the type signature must be equivalent.
                     var formal = new FormalScope();

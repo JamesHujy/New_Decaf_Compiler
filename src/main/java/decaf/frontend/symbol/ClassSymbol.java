@@ -69,6 +69,23 @@ public final class ClassSymbol extends Symbol {
         return main;
     }
 
+    public TreeSet<String> getAbstractMethod() {
+        var abstractMethods = new TreeSet<String>();
+        if(parentSymbol.isPresent())
+            abstractMethods.addAll(parentSymbol.get().getAbstractMethod());
+        for(var symbol : scope)
+        {
+            if(symbol.isMethodSymbol())
+            {
+                var methodSymbol = (MethodSymbol) symbol;
+                if(methodSymbol.isAbstract())
+                    abstractMethods.add(methodSymbol.name);
+                else
+                    abstractMethods.remove(methodSymbol.name);
+            }
+        }
+        return abstractMethods;
+    }
     @Override
     protected String str() {
         if (!this.isAbstract)
