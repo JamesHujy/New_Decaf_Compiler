@@ -6,6 +6,7 @@ import decaf.driver.error.*;
 import decaf.frontend.scope.ScopeStack;
 import decaf.frontend.symbol.ClassSymbol;
 import decaf.frontend.symbol.MethodSymbol;
+import decaf.frontend.symbol.Symbol;
 import decaf.frontend.symbol.VarSymbol;
 import decaf.frontend.tree.Pos;
 import decaf.frontend.tree.Tree;
@@ -422,47 +423,96 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         }
     }
 
+    public String getClass(Tree.VarSel varsel)
+    {
+        if(varsel.receiver.isPresent())
+        {
+            var receiver = (Tree.VarSel)varsel.receiver.get();
+            return getClass(receiver);
+        }
+        else
+        {
+            var receiver = (Tree.VarSel)varsel.receiver.get();
+            return receiver.name;
+        }
+    }
+
     @Override
     public void visitCall(Tree.Call expr, ScopeStack ctx) {
         expr.type = BuiltInType.ERROR;
         Type rt;
         boolean thisClass = false;
 
-        if (expr.receiver.isPresent()) {
-            var receiver = expr.receiver.get();
-            allowClassNameVar = true;
-            receiver.accept(this, ctx);
-            allowClassNameVar = false;
-            rt = receiver.type;
+        ClassSymbol clazz;
+        boolean callstatic = false;
+        if(expr.directCall)
+        {
+            var callExpr = (Tree.VarSel) expr.expr;
+            if(callExpr.receiver.isPresent())
+            {
+                var className = (Tree.VarSel)callExpr.receiver.get();
+                clazz = ctx.getClass(className.name);
+                callstatic = true;
+            }
+            else
+            {
+                clazz = ctx.currentClass();
+            }
+            var symbol = clazz.scope.lookup(callExpr.name);
+            if (symbol.isPresent()) {
+                if(symbol.get().isMethodSymbol())
+                {
+                    var method = (MethodSymbol) symbol.get();
+                    expr.symbol = method;
+                    expr.type = method.type.returnType;
+                    if (callstatic && !method.isStatic()) {
+                        issue(new NotClassFieldError(expr.pos, expr.methodName, clazz.type.toString()));
+                        return;
+                    }
+                }
+            }
+            else {
+                issue(new FieldNotFoundError(callExpr.pos, callExpr.name, clazz.type.toString()));
+            }
+        }
+        else
+        {
+            if (expr.receiver.isPresent()) {
 
-            if (receiver instanceof Tree.VarSel) {
-                var v1 = (Tree.VarSel) receiver;
-                if (v1.isClassName) {
-                    // Special case: invoking a static method, like MyClass.foo()
-                    typeCall(expr, false, v1.name, ctx, true);
+                var receiver = expr.receiver.get();
+                allowClassNameVar = true;
+                receiver.accept(this, ctx);
+                allowClassNameVar = false;
+                rt = receiver.type;
+                if (receiver instanceof Tree.VarSel) {
+                    var v1 = (Tree.VarSel) receiver;
+                    if (v1.isClassName) {
+                        // Special case: invoking a static method, like MyClass.foo()
+                        typeCall(expr, false, v1.name, ctx, true);
+                        return;
+                    }
+                }
+            }
+            else {
+                thisClass = true;
+                expr.setThis();
+                rt = ctx.currentClass().type;
+            }
+            if (rt.noError()) {
+                if (rt.isArrayType() && expr.methodName.equals("length")) { // Special case: array.length()
+                    if (!expr.args.isEmpty()) {
+                        issue(new BadLengthArgError(expr.pos, expr.args.size()));
+                    }
+                    expr.isArrayLength = true;
+                    expr.type = BuiltInType.INT;
                     return;
                 }
-            }
-        } else {
-            thisClass = true;
-            expr.setThis();
-            rt = ctx.currentClass().type;
-        }
 
-        if (rt.noError()) {
-            if (rt.isArrayType() && expr.methodName.equals("length")) { // Special case: array.length()
-                if (!expr.args.isEmpty()) {
-                    issue(new BadLengthArgError(expr.pos, expr.args.size()));
+                if (rt.isClassType()) {
+                    typeCall(expr, thisClass, ((ClassType) rt).name, ctx, false);
+                } else {
+                    issue(new NotClassFieldError(expr.pos, expr.methodName, rt.toString()));
                 }
-                expr.isArrayLength = true;
-                expr.type = BuiltInType.INT;
-                return;
-            }
-
-            if (rt.isClassType()) {
-                typeCall(expr, thisClass, ((ClassType) rt).name, ctx, false);
-            } else {
-                issue(new NotClassFieldError(expr.pos, expr.methodName, rt.toString()));
             }
         }
     }
@@ -549,17 +599,35 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
 
     @Override
     public void visitLocalVarDef(Tree.LocalVarDef stmt, ScopeStack ctx) {
-        if (stmt.initVal.isEmpty()) return;
 
-        var initVal = stmt.initVal.get();
+        if (!stmt.isVar&&stmt.initVal.isEmpty()) return;
+
+        Tree.Expr initVal;
+        if(!stmt.isVar)
+            initVal = stmt.initVal.get();
+        else
+            initVal = stmt.VarExpr;
+
+
         localVarDefPos = Optional.ofNullable(stmt.id.pos);
         initVal.accept(this, ctx);
         localVarDefPos = Optional.empty();
-        var lt = stmt.symbol.type;
-        var rt = initVal.type;
+        if(!stmt.isVar)
+        {
+            var lt = stmt.symbol.type;
+            var rt = initVal.type;
 
-        if (lt.noError() && (lt.isFuncType() || !rt.subtypeOf(lt))) {
-            issue(new IncompatBinOpError(stmt.assignPos, lt.toString(), "=", rt.toString()));
+            if (lt.noError() && (lt.isFuncType() || !rt.subtypeOf(lt))) {
+                issue(new IncompatBinOpError(stmt.assignPos, lt.toString(), "=", rt.toString()));
+            }
+        }
+        else
+        {
+            if(initVal.type.isVoidType())
+            {
+                issue(new AssignVarVoidError(stmt.id.pos, stmt.id.name));
+            }
+            stmt.symbol.setType(initVal.type);
         }
     }
 

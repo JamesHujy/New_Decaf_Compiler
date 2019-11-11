@@ -66,4 +66,9 @@ public final class VarSymbol extends Symbol {
      * Temp, reserved for {@link decaf.frontend.tacgen.TacGen}.
      */
     public Temp temp;
+
+    public void setType(Type type)
+    {
+        this.type = type;
+    }
 }

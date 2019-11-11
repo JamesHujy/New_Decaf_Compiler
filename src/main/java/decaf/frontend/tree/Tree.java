@@ -552,6 +552,7 @@ public abstract class Tree {
             this.name = id.name;
             this.modifiers = new Modifiers(Modifiers.NONE, pos);
             this.isVar = true;
+            this.typeLit = new TInt(pos); // # set as int temporarily
         }
 
         public LocalVarDef(TypeLit typeLit, Id id, Pos pos) {
@@ -1636,6 +1637,7 @@ public abstract class Tree {
         public Expr expr;
         public boolean isArrayLength = false;
 
+        public boolean directCall = false;
         public Call(Optional<Expr> receiver, Id method, List<Expr> args, Pos pos) {
             super(Kind.CALL, "Call", pos);
             this.receiver = receiver;
@@ -1655,8 +1657,10 @@ public abstract class Tree {
         public Call(Expr expr, List<Expr> args, Pos pos)
         {
             super(Kind.CALL, "Call", pos);
+            this.receiver = Optional.empty();
             this.expr = expr;
             this.args = args;
+            this.directCall = true;
         }
         /**
          * Set its receiver as {@code this}.
