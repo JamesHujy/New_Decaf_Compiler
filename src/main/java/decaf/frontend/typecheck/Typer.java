@@ -441,98 +441,48 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
     public void visitCall(Tree.Call expr, ScopeStack ctx) {
         expr.type = BuiltInType.ERROR;
         Type rt;
-        boolean thisClass = false;
-
-        ClassSymbol clazz;
-
-        if(expr.directCall)
-        {
-            var callExpr = (Tree.VarSel) expr.expr;
-            if(callExpr.receiver.isPresent())
-            {
-                var className = callExpr.receiver.get();
-                className.accept(this, ctx);
-                var type = className.type;
-            }
-            else
-            {
-                clazz = ctx.currentClass();
-            }
-            var symbol = clazz.scope.lookup(callExpr.name);
-            if (symbol.isPresent()) {
-                if(symbol.get().isMethodSymbol()) {
-                    var method = (MethodSymbol) symbol.get();
-                    expr.symbol = method;
-                    expr.type = method.type.returnType;
-
-                    var methodScope = ctx.currentMethod();
-                    if (methodScope.isStatic() && !method.isStatic())
-                    {
-                        issue(new RefNonStaticError(expr.pos, methodScope.name, method.name));
-                    }
-
-                    var args = expr.args;
-                    for (var arg : args) {
-                        arg.accept(this, ctx);
-                    }
-
-                    if (method.type.arity() != args.size()) {
-                        issue(new BadArgCountError(expr.pos, method.name, method.type.arity(), args.size()));
-                    }
-                }
-                else {
-                    issue(new NotClassMethodError(callExpr.pos, callExpr.name, clazz.type.toString()));
-                }
-            }
-            else {
-                issue(new FieldNotFoundError(callExpr.pos, callExpr.name, clazz.type.toString()));
-            }
-        }
-        else
-        {
-            if (expr.receiver.isPresent()) {
-
-                var receiver = expr.receiver.get();
-                allowClassNameVar = true;
-                receiver.accept(this, ctx);
-                allowClassNameVar = false;
-                rt = receiver.type;
-                if (receiver instanceof Tree.VarSel) {
-                    var v1 = (Tree.VarSel) receiver;
-                    if (v1.isClassName) {
-                        // Special case: invoking a static method, like MyClass.foo()
-                        typeCall(expr, false, v1.name, ctx, true);
-                        return;
-                    }
-                }
-            }
-            else {
-                thisClass = true;
-                expr.setThis();
-                rt = ctx.currentClass().type;
-            }
-            if (rt.noError()) {
-                if (rt.isArrayType() && expr.methodName.equals("length")) { // Special case: array.length()
-                    if (!expr.args.isEmpty()) {
-                        issue(new BadLengthArgError(expr.pos, expr.args.size()));
-                    }
-                    expr.isArrayLength = true;
-                    expr.type = BuiltInType.INT;
+        var varsel = (Tree.VarSel) expr.expr;
+        if (varsel.receiver.isPresent()) {
+            var receiver = varsel.receiver.get();
+            allowClassNameVar = true;
+            receiver.accept(this, ctx);
+            allowClassNameVar = false;
+            if (receiver instanceof Tree.VarSel) {
+                var v1 = (Tree.VarSel) receiver;
+                if (v1.isClassName) {
+                    // Special case: invoking a static method, like MyClass.foo()
+                    typeCall(expr, false, v1.name, ctx, false);
                     return;
                 }
-
-                if (rt.isClassType()) {
-                    typeCall(expr, thisClass, ((ClassType) rt).name, ctx, false);
-                } else {
-                    issue(new NotClassFieldError(expr.pos, expr.methodName, rt.toString()));
-                }
             }
         }
+        else {
+            typeCall(expr, true, "", ctx, false);
+        }
+        /*
+        if (rt.noError()) {
+            if (rt.isArrayType() && expr.methodName.equals("length")) { // Special case: array.length()
+                if (!expr.args.isEmpty()) {
+                    issue(new BadLengthArgError(expr.pos, expr.args.size()));
+                }
+                expr.isArrayLength = true;
+                expr.type = BuiltInType.INT;
+                return;
+            }
+
+            if (rt.isClassType()) {
+                typeCall(expr, thisClass, ((ClassType) rt).name, ctx, false);
+            } else {
+                issue(new NotClassFieldError(expr.pos, expr.methodName, rt.toString()));
+            }
+        }*/
     }
 
     private void typeCall(Tree.Call call, boolean thisClass, String className, ScopeStack ctx, boolean requireStatic) {
         var clazz = thisClass ? ctx.currentClass() : ctx.getClass(className);
-        var symbol = clazz.scope.lookup(call.methodName);
+        var varSel = (Tree.VarSel) call.expr;
+        String methodName = varSel.name;
+        var symbol = clazz.scope.lookup(methodName);
         if (symbol.isPresent()) {
             if (symbol.get().isMethodSymbol()) {
                 var method = (MethodSymbol) symbol.get();

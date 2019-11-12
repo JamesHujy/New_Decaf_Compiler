@@ -327,7 +327,7 @@ Expr            :   Literal
                     }
                 |   Expr '(' ExprList ')'
                     {
-                        $$ = svExpr(new Call($1.expr, $3.exprList, $2.pos));
+                        $$ = svExpr(new Call($1.expr, $3.exprList, $1.pos));
                     }
                 |   Expr '+' Expr
                     {
