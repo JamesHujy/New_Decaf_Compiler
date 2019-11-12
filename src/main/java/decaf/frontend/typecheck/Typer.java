@@ -423,36 +423,67 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         }
     }
 
-    public String getClass(Tree.VarSel varsel)
-    {
-        if(varsel.receiver.isPresent())
-        {
-            var receiver = (Tree.VarSel)varsel.receiver.get();
-            return getClass(receiver);
-        }
-        else
-        {
-            var receiver = (Tree.VarSel)varsel.receiver.get();
-            return receiver.name;
-        }
-    }
-
     @Override
     public void visitCall(Tree.Call expr, ScopeStack ctx) {
+
         expr.type = BuiltInType.ERROR;
         Type rt;
         var varsel = (Tree.VarSel) expr.expr;
+        System.out.println(varsel.toString());
         if (varsel.receiver.isPresent()) {
             var receiver = varsel.receiver.get();
+
             allowClassNameVar = true;
             receiver.accept(this, ctx);
             allowClassNameVar = false;
+
             if (receiver instanceof Tree.VarSel) {
                 var v1 = (Tree.VarSel) receiver;
+                System.out.println("receiver!!!!!!"+v1.name);
                 if (v1.isClassName) {
                     // Special case: invoking a static method, like MyClass.foo()
-                    typeCall(expr, false, v1.name, ctx, false);
-                    return;
+                    typeCall(expr, false, v1.name, ctx, true);
+                }
+                else if(varsel.name.equals("length")) {
+                    System.out.println("length!!!!!!"+v1.name);
+                    if (v1.type.isArrayType())
+                    {
+                        if(!expr.args.isEmpty())
+                        {
+                            issue(new BadLengthArgError(expr.pos, expr.args.size()));
+                        }
+                        expr.isArrayLength = true;
+                        expr.type = BuiltInType.INT;
+                    }
+                    else
+                    {
+                        issue(new NotClassFieldError(expr.expr.pos, varsel.name, v1.type.toString()));
+                    }
+                }
+            }
+            else if (receiver instanceof Tree.NewClass)
+            {
+                System.out.println("Class New class");
+                var type = receiver.type;
+                if(type.noError()&&type.isClassType())
+                {
+                    System.out.println("New class no error"+type);
+                    typeCall(expr, false, ((Tree.NewClass) receiver).symbol.name, ctx, true);
+                }
+                else if(varsel.name.equals("length")) {
+                    if (receiver.type.isArrayType())
+                    {
+                        if(!expr.args.isEmpty())
+                        {
+                            issue(new BadLengthArgError(expr.pos, expr.args.size()));
+                        }
+                        expr.isArrayLength = true;
+                        expr.type = BuiltInType.INT;
+                    }
+                    else
+                    {
+                        issue(new NotClassFieldError(expr.expr.pos, varsel.name, receiver.type.toString()));
+                    }
                 }
             }
         }
@@ -479,6 +510,7 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
     }
 
     private void typeCall(Tree.Call call, boolean thisClass, String className, ScopeStack ctx, boolean requireStatic) {
+        System.out.println("className"+className);
         var clazz = thisClass ? ctx.currentClass() : ctx.getClass(className);
         var varSel = (Tree.VarSel) call.expr;
         String methodName = varSel.name;
@@ -489,13 +521,13 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                 call.symbol = method;
                 call.type = method.type.returnType;
                 if (requireStatic && !method.isStatic()) {
-                    issue(new NotClassFieldError(call.pos, call.methodName, clazz.type.toString()));
+                    issue(new NotClassFieldError(call.expr.pos, methodName, clazz.type.toString()));
                     return;
                 }
 
                 // Cannot call this's member methods in a static method
                 if (thisClass && ctx.currentMethod().isStatic() && !method.isStatic()) {
-                    issue(new RefNonStaticError(call.pos, ctx.currentMethod().name, method.name));
+                    issue(new RefNonStaticError(call.expr.pos, ctx.currentMethod().name, method.name));
                 }
 
                 // typing args
@@ -519,10 +551,13 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                     }
                 }
             } else {
-                issue(new NotClassMethodError(call.pos, call.methodName, clazz.type.toString()));
+                issue(new NotCallableError(call.pos, symbol.get().type.toString()));
             }
         } else {
-            issue(new FieldNotFoundError(call.pos, call.methodName, clazz.type.toString()));
+            if(!thisClass)
+                issue(new FieldNotFoundError(call.expr.pos, methodName, clazz.type.toString()));
+            else
+                issue(new UndeclVarError(call.expr.pos, methodName));
         }
     }
 
