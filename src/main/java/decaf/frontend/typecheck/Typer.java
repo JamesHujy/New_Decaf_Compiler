@@ -444,15 +444,15 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         boolean thisClass = false;
 
         ClassSymbol clazz;
-        boolean callstatic = false;
+
         if(expr.directCall)
         {
             var callExpr = (Tree.VarSel) expr.expr;
             if(callExpr.receiver.isPresent())
             {
-                var className = (Tree.VarSel)callExpr.receiver.get();
-                clazz = ctx.getClass(className.name);
-                callstatic = true;
+                var className = callExpr.receiver.get();
+                className.accept(this, ctx);
+                var type = className.type;
             }
             else
             {
@@ -460,15 +460,28 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             }
             var symbol = clazz.scope.lookup(callExpr.name);
             if (symbol.isPresent()) {
-                if(symbol.get().isMethodSymbol())
-                {
+                if(symbol.get().isMethodSymbol()) {
                     var method = (MethodSymbol) symbol.get();
                     expr.symbol = method;
                     expr.type = method.type.returnType;
-                    if (callstatic && !method.isStatic()) {
-                        issue(new NotClassFieldError(expr.pos, expr.methodName, clazz.type.toString()));
-                        return;
+
+                    var methodScope = ctx.currentMethod();
+                    if (methodScope.isStatic() && !method.isStatic())
+                    {
+                        issue(new RefNonStaticError(expr.pos, methodScope.name, method.name));
                     }
+
+                    var args = expr.args;
+                    for (var arg : args) {
+                        arg.accept(this, ctx);
+                    }
+
+                    if (method.type.arity() != args.size()) {
+                        issue(new BadArgCountError(expr.pos, method.name, method.type.arity(), args.size()));
+                    }
+                }
+                else {
+                    issue(new NotClassMethodError(callExpr.pos, callExpr.name, clazz.type.toString()));
                 }
             }
             else {
