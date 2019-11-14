@@ -8,15 +8,9 @@ import decaf.frontend.symbol.ClassSymbol;
 import decaf.frontend.symbol.MethodSymbol;
 import decaf.frontend.symbol.VarSymbol;
 import decaf.frontend.tree.Tree;
-import decaf.frontend.type.BuiltInType;
-import decaf.frontend.type.ClassType;
-import decaf.frontend.type.FunType;
-import decaf.frontend.type.Type;
+import decaf.frontend.type.*;
 
-import java.util.ArrayList;
-import java.util.Map;
-import java.util.Optional;
-import java.util.TreeMap;
+import java.util.*;
 
 /**
  * The namer phase: resolve all symbols defined in the abstract syntax tree and store them in symbol tables (i.e.
@@ -217,9 +211,25 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
     }
 
     @Override
+    public void visitTFunc(Tree.TFunc that, ScopeStack ctx)
+    {
+        ArrayList<Type> thatTypeList = new ArrayList<>();
+        that.returnType.accept(this, ctx);
+        for(var type:that.typeList){
+            type.accept(this, ctx);
+            if(type.type.isVoidType())
+            {
+                issue(new VoidAsParaError(type.pos));
+            }
+            thatTypeList.add(type.type);
+        }
+
+        that.type = new TFuncType(that.returnType.type, thatTypeList);
+    }
+
+    @Override
     public void visitVarDef(Tree.VarDef varDef, ScopeStack ctx) {
         varDef.typeLit.accept(this, ctx);
-
         var earlier = ctx.findConflict(varDef.name);
         if (earlier.isPresent()) {
             if (earlier.get().isVarSymbol() && earlier.get().domain() != ctx.currentScope()) {
@@ -229,7 +239,6 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             }
             return;
         }
-
         if (varDef.typeLit.type.eq(BuiltInType.VOID)) {
             issue(new BadVarTypeError(varDef.pos, varDef.name));
             return;
@@ -315,7 +324,6 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
 
     @Override
     public void visitLocalVarDef(Tree.LocalVarDef def, ScopeStack ctx) {
-
         def.typeLit.accept(this, ctx);
         var earlier = ctx.findConflict(def.name);
         if (earlier.isPresent()) {

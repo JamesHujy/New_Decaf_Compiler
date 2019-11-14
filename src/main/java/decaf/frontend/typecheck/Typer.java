@@ -10,13 +10,11 @@ import decaf.frontend.symbol.Symbol;
 import decaf.frontend.symbol.VarSymbol;
 import decaf.frontend.tree.Pos;
 import decaf.frontend.tree.Tree;
-import decaf.frontend.type.ArrayType;
-import decaf.frontend.type.BuiltInType;
-import decaf.frontend.type.ClassType;
-import decaf.frontend.type.Type;
+import decaf.frontend.type.*;
 import decaf.lowlevel.log.IndentPrinter;
 import decaf.printing.PrettyScope;
 
+import java.util.ArrayList;
 import java.util.Optional;
 
 /**
@@ -210,6 +208,19 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
     }
 
     @Override
+    public void visitTFunc(Tree.TFunc that, ScopeStack ctx)
+    {
+        ArrayList<Type> thatTypeList = new ArrayList<>();
+        that.returnType.accept(this, ctx);
+        for(var type:that.typeList){
+            type.accept(this, ctx);
+            thatTypeList.add(type.type);
+        }
+        that.type = new TFuncType(that.returnType.type, thatTypeList);
+    }
+
+
+    @Override
     public void visitUnary(Tree.Unary expr, ScopeStack ctx) {
         expr.operand.accept(this, ctx);
         var t = expr.operand.type;
@@ -352,13 +363,19 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                     expr.isClassName = true;
                     return;
                 }
+
+                if(symbol.get().isMethodSymbol())
+                {
+                    var method = (MethodSymbol) symbol.get();
+                    expr.type = method.type;
+                    return;
+                }
             }
 
             expr.type = BuiltInType.ERROR;
             issue(new UndeclVarError(expr.pos, expr.name));
             return;
         }
-
         // has receiver
         var receiver = expr.receiver.get();
         allowClassNameVar = true;
@@ -425,7 +442,6 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
 
     @Override
     public void visitCall(Tree.Call expr, ScopeStack ctx) {
-
         expr.type = BuiltInType.ERROR;
         Type rt;
         var varsel = (Tree.VarSel) expr.expr;
@@ -439,13 +455,11 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
 
             if (receiver instanceof Tree.VarSel) {
                 var v1 = (Tree.VarSel) receiver;
-                System.out.println("receiver!!!!!!"+v1.name);
                 if (v1.isClassName) {
                     // Special case: invoking a static method, like MyClass.foo()
                     typeCall(expr, false, v1.name, ctx, true);
                 }
                 else if(varsel.name.equals("length")) {
-                    System.out.println("length!!!!!!"+v1.name);
                     if (v1.type.isArrayType())
                     {
                         if(!expr.args.isEmpty())
@@ -463,7 +477,6 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             }
             else if (receiver instanceof Tree.NewClass)
             {
-                System.out.println("Class New class");
                 var type = receiver.type;
                 if(type.noError()&&type.isClassType())
                 {
@@ -490,27 +503,9 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         else {
             typeCall(expr, true, "", ctx, false);
         }
-        /*
-        if (rt.noError()) {
-            if (rt.isArrayType() && expr.methodName.equals("length")) { // Special case: array.length()
-                if (!expr.args.isEmpty()) {
-                    issue(new BadLengthArgError(expr.pos, expr.args.size()));
-                }
-                expr.isArrayLength = true;
-                expr.type = BuiltInType.INT;
-                return;
-            }
-
-            if (rt.isClassType()) {
-                typeCall(expr, thisClass, ((ClassType) rt).name, ctx, false);
-            } else {
-                issue(new NotClassFieldError(expr.pos, expr.methodName, rt.toString()));
-            }
-        }*/
     }
 
     private void typeCall(Tree.Call call, boolean thisClass, String className, ScopeStack ctx, boolean requireStatic) {
-        System.out.println("className"+className);
         var clazz = thisClass ? ctx.currentClass() : ctx.getClass(className);
         var varSel = (Tree.VarSel) call.expr;
         String methodName = varSel.name;
@@ -597,7 +592,6 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
 
     @Override
     public void visitLocalVarDef(Tree.LocalVarDef stmt, ScopeStack ctx) {
-
         if (!stmt.isVar&&stmt.initVal.isEmpty()) return;
 
         Tree.Expr initVal;
@@ -610,12 +604,14 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         localVarDefPos = Optional.ofNullable(stmt.id.pos);
         initVal.accept(this, ctx);
         localVarDefPos = Optional.empty();
+
         if(!stmt.isVar)
         {
             var lt = stmt.symbol.type;
             var rt = initVal.type;
 
-            if (lt.noError() && (lt.isFuncType() || !rt.subtypeOf(lt))) {
+
+            if (lt.noError() && (!lt.subtypeOf(rt)) && !rt.subtypeOf(lt)) {
                 issue(new IncompatBinOpError(stmt.assignPos, lt.toString(), "=", rt.toString()));
             }
         }
