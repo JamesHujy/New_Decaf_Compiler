@@ -3,11 +3,11 @@ package decaf.frontend.typecheck;
 import decaf.driver.Config;
 import decaf.driver.Phase;
 import decaf.driver.error.*;
+import decaf.frontend.scope.FormalScope;
+import decaf.frontend.scope.LambdaScope;
+import decaf.frontend.scope.Scope;
 import decaf.frontend.scope.ScopeStack;
-import decaf.frontend.symbol.ClassSymbol;
-import decaf.frontend.symbol.MethodSymbol;
-import decaf.frontend.symbol.Symbol;
-import decaf.frontend.symbol.VarSymbol;
+import decaf.frontend.symbol.*;
 import decaf.frontend.tree.Pos;
 import decaf.frontend.tree.Tree;
 import decaf.frontend.type.*;
@@ -207,17 +207,7 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         readStringExpr.type = BuiltInType.STRING;
     }
 
-    @Override
-    public void visitTFunc(Tree.TFunc that, ScopeStack ctx)
-    {
-        ArrayList<Type> thatTypeList = new ArrayList<>();
-        that.returnType.accept(this, ctx);
-        for(var type:that.typeList){
-            type.accept(this, ctx);
-            thatTypeList.add(type.type);
-        }
-        that.type = new TFuncType(that.returnType.type, thatTypeList);
-    }
+
 
 
     @Override
@@ -445,7 +435,6 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         expr.type = BuiltInType.ERROR;
         Type rt;
         var varsel = (Tree.VarSel) expr.expr;
-        System.out.println(varsel.toString());
         if (varsel.receiver.isPresent()) {
             var receiver = varsel.receiver.get();
 
@@ -480,7 +469,6 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                 var type = receiver.type;
                 if(type.noError()&&type.isClassType())
                 {
-                    System.out.println("New class no error"+type);
                     typeCall(expr, false, ((Tree.NewClass) receiver).symbol.name, ctx, true);
                 }
                 else if(varsel.name.equals("length")) {
@@ -510,6 +498,8 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         var varSel = (Tree.VarSel) call.expr;
         String methodName = varSel.name;
         var symbol = clazz.scope.lookup(methodName);
+        var localSymbol = ctx.currentScope().find(methodName);
+        System.out.println(methodName+localSymbol.isPresent());
         if (symbol.isPresent()) {
             if (symbol.get().isMethodSymbol()) {
                 var method = (MethodSymbol) symbol.get();
@@ -535,6 +525,7 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                 if (method.type.arity() != args.size()) {
                     issue(new BadArgCountError(call.pos, method.name, method.type.arity(), args.size()));
                 }
+
                 var iter1 = method.type.argTypes.iterator();
                 var iter2 = call.args.iterator();
                 for (int i = 1; iter1.hasNext() && iter2.hasNext(); i++) {
@@ -548,7 +539,23 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             } else {
                 issue(new NotCallableError(call.pos, symbol.get().type.toString()));
             }
-        } else {
+        } else if(localSymbol.isPresent()) {
+            var localSymbolGet = localSymbol.get();
+            if(localSymbolGet.type.isTFuncType())
+            {
+                var args = call.args;
+                var localSymbolType = (TFuncType)localSymbolGet.type;
+                if (localSymbolType.argTypes.size() != args.size()) {
+                    issue(new BadArgCountError(call.pos, localSymbolGet.name, localSymbolType.argTypes.size(), args.size()));
+                }
+            }
+            else
+            {
+                issue(new NotCallableError(call.pos, symbol.get().type.toString()));
+            }
+
+        }
+        else {
             if(!thisClass)
                 issue(new FieldNotFoundError(call.expr.pos, methodName, clazz.type.toString()));
             else
@@ -625,6 +632,27 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         }
     }
 
+    @Override
+    public void visitLambda(Tree.Lambda lambda, ScopeStack ctx) {
+        ctx.open(lambda.scope);
+        if(lambda.isBlock)
+        {
+            lambda.body.accept(this,ctx);
+            if(!lambda.body.returns) {
+                lambda.symbol.setReturnType(BuiltInType.VOID);
+                lambda.type = lambda.symbol.type;
+            }
+
+        }
+        else
+        {
+            lambda.expr.accept(this, ctx);
+            lambda.symbol.setReturnType(lambda.expr.type);
+            lambda.type = lambda.symbol.type;
+        }
+        ctx.close();
+
+    }
     // Only usage: check if an initializer cyclically refers to the declared variable, e.g. var x = x + 1
     private Optional<Pos> localVarDefPos = Optional.empty();
 }

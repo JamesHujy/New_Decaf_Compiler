@@ -7,7 +7,7 @@ import java.util.List;
  */
 public class FunType extends Type {
 
-    public final Type returnType;
+    public Type returnType;
 
     public final List<Type> argTypes;
 
@@ -85,5 +85,9 @@ public class FunType extends Type {
     @Override
     public boolean isFuncType() {
         return true;
+    }
+
+    public void setReturnType(Type type) {
+        this.returnType = type;
     }
 }

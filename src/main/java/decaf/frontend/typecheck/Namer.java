@@ -5,11 +5,13 @@ import decaf.driver.Phase;
 import decaf.driver.error.*;
 import decaf.frontend.scope.*;
 import decaf.frontend.symbol.ClassSymbol;
+import decaf.frontend.symbol.LambdaSymbol;
 import decaf.frontend.symbol.MethodSymbol;
 import decaf.frontend.symbol.VarSymbol;
 import decaf.frontend.tree.Tree;
 import decaf.frontend.type.*;
 
+import java.sql.SQLSyntaxErrorException;
 import java.util.*;
 
 /**
@@ -211,23 +213,6 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
     }
 
     @Override
-    public void visitTFunc(Tree.TFunc that, ScopeStack ctx)
-    {
-        ArrayList<Type> thatTypeList = new ArrayList<>();
-        that.returnType.accept(this, ctx);
-        for(var type:that.typeList){
-            type.accept(this, ctx);
-            if(type.type.isVoidType())
-            {
-                issue(new VoidAsParaError(type.pos));
-            }
-            thatTypeList.add(type.type);
-        }
-
-        that.type = new TFuncType(that.returnType.type, thatTypeList);
-    }
-
-    @Override
     public void visitVarDef(Tree.VarDef varDef, ScopeStack ctx) {
         varDef.typeLit.accept(this, ctx);
         var earlier = ctx.findConflict(varDef.name);
@@ -317,6 +302,7 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         block.scope = new LocalScope(ctx.currentScope());
         ctx.open(block.scope);
         for (var stmt : block.stmts) {
+            System.out.println(stmt.toString());
             stmt.accept(this, ctx);
         }
         ctx.close();
@@ -363,5 +349,55 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
     @Override
     public void visitWhile(Tree.While loop, ScopeStack ctx) {
         loop.body.accept(this, ctx);
+    }
+
+
+    @Override
+    public void visitReturn(Tree.Return stmt, ScopeStack ctx) {
+        if(stmt.expr.isPresent()) {
+            stmt.expr.get().accept(this, ctx);
+        }
+    }
+
+    @Override
+    public void visitPrint(Tree.Print print, ScopeStack ctx) {
+        for(var expr:print.exprs)
+            expr.accept(this, ctx);
+    }
+
+    @Override
+    public void visitLambda(Tree.Lambda lambda, ScopeStack ctx) {
+        System.out.println("visitLambda");
+        lambda.scope = new LambdaScope(ctx.currentScope());
+        ctx.open(lambda.scope);
+
+        var argsTypes = new ArrayList<Type>();
+        for(var paras:lambda.params) {
+            paras.accept(this, ctx);
+            paras.typeLit.accept(this, ctx);
+            argsTypes.add(paras.typeLit.type);
+        }
+        lambda.symbol = new LambdaSymbol(BuiltInType.NULL, argsTypes, (LambdaScope) ctx.currentScope(), lambda.pos);
+        ctx.close();
+
+        lambda.type = lambda.symbol.type;
+        ctx.declare(lambda.symbol);
+
+        ctx.showScope();
+        lambda.scope.setOwner(lambda.symbol);
+
+        ctx.open(lambda.scope);
+        if(lambda.isBlock)
+        {
+            lambda.body.accept(this,ctx);
+        }
+        else
+        {
+            var scope = new LocalScope(ctx.currentScope());
+            ctx.open(scope);
+            lambda.expr.accept(this, ctx);
+            ctx.close();
+        }
+        ctx.close();
     }
 }

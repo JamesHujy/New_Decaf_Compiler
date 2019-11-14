@@ -1,9 +1,11 @@
 package decaf.frontend.scope;
 
 import decaf.frontend.symbol.ClassSymbol;
+import decaf.frontend.symbol.LambdaSymbol;
 import decaf.frontend.symbol.MethodSymbol;
 import decaf.frontend.symbol.Symbol;
 import decaf.frontend.tree.Pos;
+import decaf.frontend.tree.Tree;
 
 import java.util.ListIterator;
 import java.util.Objects;
@@ -89,6 +91,9 @@ public class ScopeStack {
         } else if (scope.isFormalScope()) {
             var formalScope = (FormalScope) scope;
             currMethod = formalScope.getOwner();
+        } else if (scope.isLambdaScope()) {
+            var lambdaScope = (LambdaScope) scope;
+            currLambda = lambdaScope.getOwner();
         }
         scopeStack.push(scope);
     }
@@ -194,6 +199,7 @@ public class ScopeStack {
     private Stack<Scope> scopeStack = new Stack<>();
     private ClassSymbol currClass;
     private MethodSymbol currMethod;
+    private LambdaSymbol currLambda;
 
     private Optional<Symbol> findWhile(String key, Predicate<Scope> cond, Predicate<Symbol> validator) {
         ListIterator<Scope> iter = scopeStack.listIterator(scopeStack.size());
@@ -204,5 +210,11 @@ public class ScopeStack {
             if (symbol.isPresent() && validator.test(symbol.get())) return symbol;
         }
         return cond.test(global) ? global.find(key) : Optional.empty();
+    }
+
+    public void showScope(){
+        for(var scope:scopeStack)
+            System.out.println(scope.kind);
+        System.out.println("end");
     }
 }
