@@ -4,8 +4,10 @@ import decaf.frontend.scope.LambdaScope;
 import decaf.frontend.tree.Pos;
 import decaf.frontend.type.BuiltInType;
 import decaf.frontend.type.FunType;
+import decaf.frontend.type.TFuncType;
 import decaf.frontend.type.Type;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public final class LambdaSymbol extends Symbol{
@@ -16,12 +18,15 @@ public final class LambdaSymbol extends Symbol{
 
     public LambdaScope scope;
 
+    public ArrayList<Type> returnTypeList = new ArrayList<>();
+    public ArrayList<Pos> returnPos = new ArrayList<>();
+
     public LambdaSymbol(Type returnType, List<Type> argTypes, LambdaScope scope, Pos pos) {
         super("lambda@"+pos.toString(), BuiltInType.NULL, pos);
         this.returnType = returnType;
         this.argTypes = argTypes;
         this.scope = scope;
-        type = new FunType(returnType, argTypes);
+        type = new TFuncType(returnType, argTypes);
     }
 
     @Override

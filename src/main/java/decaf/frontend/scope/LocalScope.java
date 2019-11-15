@@ -11,9 +11,11 @@ import java.util.List;
  */
 public class LocalScope extends Scope {
 
+    private Scope parentScope;
+
     public LocalScope(Scope parent) {
         super(Kind.LOCAL);
-        assert parent.isFormalOrLocalScope();
+        this.parentScope = parent;
         if (parent.isFormalScope()) {
             ((FormalScope) parent).setNested(this);
         }
@@ -23,6 +25,10 @@ public class LocalScope extends Scope {
         else {
             ((LocalScope) parent).nested.add(this);
         }
+    }
+
+    public Scope getParentScope() {
+        return parentScope;
     }
 
     @Override

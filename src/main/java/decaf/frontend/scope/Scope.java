@@ -109,4 +109,9 @@ public abstract class Scope implements Iterable<Symbol> {
 
     protected Map<String, Symbol> symbols = new TreeMap<>();
 
+    public void showSymbol(){
+        for(var symbol:symbols.values())
+            System.out.println(symbol.toString());
+    }
+
 }

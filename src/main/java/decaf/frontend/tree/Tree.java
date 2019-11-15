@@ -604,6 +604,8 @@ public abstract class Tree {
         // For type check
         public LocalScope scope;
 
+        public Type returnType;
+
         public Block(List<Stmt> stmts, Pos pos) {
             super(Kind.BLOCK, "Block", pos);
             this.stmts = stmts;
@@ -915,6 +917,7 @@ public abstract class Tree {
     public static class Return extends Stmt {
         // Tree elements
         public Optional<Expr> expr;
+        public Type returnType;
 
         public Return(Optional<Expr> expr, Pos pos) {
             super(Kind.RETURN, "Return", pos);

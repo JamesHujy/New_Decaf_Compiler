@@ -213,6 +213,14 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
     }
 
     @Override
+    public void visitCall(Tree.Call expr, ScopeStack ctx){
+        if(expr.expr instanceof Tree.Lambda)
+        {
+            var lambda = (Tree.Lambda) expr.expr;
+            lambda.accept(this, ctx);
+        }
+    }
+    @Override
     public void visitVarDef(Tree.VarDef varDef, ScopeStack ctx) {
         varDef.typeLit.accept(this, ctx);
         var earlier = ctx.findConflict(varDef.name);
@@ -301,8 +309,8 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
     public void visitBlock(Tree.Block block, ScopeStack ctx) {
         block.scope = new LocalScope(ctx.currentScope());
         ctx.open(block.scope);
+
         for (var stmt : block.stmts) {
-            System.out.println(stmt.toString());
             stmt.accept(this, ctx);
         }
         ctx.close();
@@ -311,6 +319,10 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
     @Override
     public void visitLocalVarDef(Tree.LocalVarDef def, ScopeStack ctx) {
         def.typeLit.accept(this, ctx);
+        if(def.isVar)
+            def.VarExpr.accept(this,ctx);
+        else if(def.initVal.isPresent())
+            def.initVal.get().accept(this, ctx);
         var earlier = ctx.findConflict(def.name);
         if (earlier.isPresent()) {
             issue(new DeclConflictError(def.pos, def.name, earlier.get().pos));
@@ -367,7 +379,6 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
 
     @Override
     public void visitLambda(Tree.Lambda lambda, ScopeStack ctx) {
-        System.out.println("visitLambda");
         lambda.scope = new LambdaScope(ctx.currentScope());
         ctx.open(lambda.scope);
 
@@ -382,8 +393,6 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
 
         lambda.type = lambda.symbol.type;
         ctx.declare(lambda.symbol);
-
-        ctx.showScope();
         lambda.scope.setOwner(lambda.symbol);
 
         ctx.open(lambda.scope);

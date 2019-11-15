@@ -86,6 +86,7 @@ public final class ClassSymbol extends Symbol {
         }
         return abstractMethods;
     }
+    
     @Override
     protected String str() {
         if (!this.isAbstract)

@@ -2,11 +2,15 @@ package decaf.frontend.scope;
 
 import decaf.frontend.symbol.LambdaSymbol;
 import decaf.frontend.tree.Tree;
+import decaf.frontend.type.Type;
+
+import java.util.ArrayList;
 
 
 public final class LambdaScope extends Scope {
 
     public LambdaSymbol owner;
+
     public LambdaScope(Scope parent)
     {
         super(Kind.LAMBDA);
