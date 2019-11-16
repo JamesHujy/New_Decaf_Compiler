@@ -96,7 +96,7 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         var lt = stmt.lhs.type;
         var rt = stmt.rhs.type;
 
-        if (lt.noError() && (lt.isFuncType() || !rt.subtypeOf(lt))) {
+        if (lt.noError() && (!rt.subtypeOf(lt))) {
             issue(new IncompatBinOpError(stmt.pos, lt.toString(), "=", rt.toString()));
         }
     }
@@ -348,6 +348,7 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
 
     @Override
     public void visitVarSel(Tree.VarSel expr, ScopeStack ctx) {
+        System.out.println(expr+"   "+expr.pos);
         if (expr.receiver.isEmpty()) {
             // Variable, which should be complicated since a legal variable could refer to a local var,
             // a visible member var, and a class name.
@@ -367,8 +368,8 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                     }
                     return;
                 }
-
-                if (symbol.get().isClassSymbol() && allowClassNameVar) { // special case: a class name
+                if (symbol.get().isClassSymbol()) { // special case: a class name
+                    System.out.println(expr + "class symbol!");
                     var clazz = (ClassSymbol) symbol.get();
                     expr.type = clazz.type;
                     expr.isClassName = true;
@@ -394,20 +395,41 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         allowClassNameVar = false;
         var rt = receiver.type;
         expr.type = BuiltInType.ERROR;
-
+        System.out.println("receiver");
+        System.out.println(receiver);
+        System.out.println(receiver.type);
         if (receiver instanceof Tree.VarSel) {
             var v1 = (Tree.VarSel) receiver;
-            if (v1.isClassName) {
-                // special case like MyClass.foo: report error cannot access field 'foo' from 'class : MyClass'
-                issue(new NotClassFieldError(expr.pos, expr.name, ctx.getClass(v1.name).type.toString()));
-                return;
+            if(v1.isClassName)
+            {
+                var clazz = ctx.getClass(v1.name);
+                String methodName = expr.name;
+                var symbol = clazz.scope.lookup(methodName);
+                if(symbol.isPresent()) {
+                    if (symbol.get().isMethodSymbol()) {
+                        var method = (MethodSymbol) symbol.get();
+                        expr.type = method.type;
+                        if (!v1.name.equals(ctx.currentClass().name) && ctx.currentMethod().isStatic() && !method.isStatic()) {
+                            issue(new NotClassFieldError(expr.pos, expr.name, v1.type.toString()));
+                        }
+                    } else if (symbol.get().isVarSymbol()) {
+                        var var = (VarSymbol) symbol.get();
+                        expr.symbol = var;
+                        expr.type = var.type;
+                        if (ctx.currentMethod().isStatic()) {
+                            issue(new NotClassFieldError(expr.pos, expr.name, v1.type.toString()));
+                        }
+                    }
+                }
             }
+
         }
 
         if (!rt.noError()) {
             return;
         }
 
+        System.out.println(receiver.type);
         if (!rt.isClassType()) {
             issue(new NotClassFieldError(expr.pos, expr.name, rt.toString()));
             return;
@@ -415,20 +437,30 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
 
         var ct = (ClassType) rt;
         var field = ctx.getClass(ct.name).scope.lookup(expr.name);
-        if (field.isPresent() && field.get().isVarSymbol()) {
-            var var = (VarSymbol) field.get();
-            if (var.isMemberVar()) {
-                expr.symbol = var;
-                expr.type = var.type;
-                if (!ctx.currentClass().type.subtypeOf(var.getOwner().type)) {
-                    // member vars are protected
-                    issue(new FieldNotAccessError(expr.pos, expr.name, ct.toString()));
+        if (field.isPresent()) {
+            if(field.get().isVarSymbol())
+            {
+                var var = (VarSymbol) field.get();
+                if (var.isMemberVar()) {
+                    expr.symbol = var;
+                    expr.type = var.type;
+                    if (!ctx.currentClass().type.subtypeOf(var.getOwner().type)) {
+                        // member vars are protected
+                        issue(new FieldNotAccessError(expr.pos, expr.name, ct.toString()));
+                    }
                 }
             }
-        } else if (field.isEmpty()) {
+            else if(field.get().isMethodSymbol())
+            {
+                var method = (MethodSymbol) field.get();
+                expr.symbol = new VarSymbol(expr.name, method.type, method.pos);
+                expr.type = method.type;
+            }
+            else {
+                issue(new NotClassFieldError(expr.pos, expr.name, ct.toString()));
+            }
+        } else{
             issue(new FieldNotFoundError(expr.pos, expr.name, ct.toString()));
-        } else {
-            issue(new NotClassFieldError(expr.pos, expr.name, ct.toString()));
         }
     }
 
@@ -453,6 +485,7 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
 
     @Override
     public void visitCall(Tree.Call expr, ScopeStack ctx) {
+        System.out.println(expr);
         expr.type = BuiltInType.ERROR;
         Type rt;
         Tree.VarSel varsel;
@@ -471,7 +504,7 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                     var v1 = (Tree.VarSel) receiver;
                     if (v1.isClassName) {
                         // Special case: invoking a static method, like MyClass.foo()
-                        typeCall(expr, false, v1.name, ctx, true);
+                        typeCall(expr, false, v1.name, ctx, ctx.currentMethod().isStatic());
                     }
                     else if(varsel.name.equals("length")) {
                         if (v1.type.isArrayType())
@@ -494,7 +527,8 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                     var type = receiver.type;
                     if(type.noError()&&type.isClassType())
                     {
-                        typeCall(expr, false, ((Tree.NewClass) receiver).symbol.name, ctx, true);
+                        boolean requireStatic = !((Tree.NewClass) receiver).symbol.name.equals(ctx.currentClass().name) && ctx.currentMethod().isStatic();
+                        typeCall(expr, false, ((Tree.NewClass) receiver).symbol.name, ctx, requireStatic);
                     }
                     else if(varsel.name.equals("length")) {
                         if (receiver.type.isArrayType())
@@ -523,7 +557,6 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             lambda = (Tree.Lambda) expr.expr;
             lambda.accept(this, ctx);
             expr.type = lambda.type;
-
         }
     }
 
@@ -640,7 +673,6 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             initVal = stmt.initVal.get();
         else
             initVal = stmt.VarExpr;
-
 
         localVarDefPos = Optional.ofNullable(stmt.id.pos);
         initVal.accept(this, ctx);
@@ -887,8 +919,6 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             lambda.type = lambda.symbol.type;
         }
         ctx.close();
-
-
     }
     // Only usage: check if an initializer cyclically refers to the declared variable, e.g. var x = x + 1
     private Optional<Pos> localVarDefPos = Optional.empty();

@@ -356,6 +356,11 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
     }
 
     @Override
+    public void visitAssign(Tree.Assign assign, ScopeStack ctx){
+        assign.rhs.accept(this, ctx);
+    }
+
+    @Override
     public void visitIf(Tree.If stmt, ScopeStack ctx) {
         stmt.trueBranch.accept(this, ctx);
         stmt.falseBranch.ifPresent(b -> b.accept(this, ctx));
