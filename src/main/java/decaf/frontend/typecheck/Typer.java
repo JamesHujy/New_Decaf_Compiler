@@ -11,6 +11,7 @@ import decaf.frontend.type.*;
 import decaf.lowlevel.log.IndentPrinter;
 import decaf.printing.PrettyScope;
 
+import java.sql.BatchUpdateException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -651,7 +652,7 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             var rt = initVal.type;
 
 
-            if (lt.noError() && (!lt.subtypeOf(rt)) && !rt.subtypeOf(lt)) {
+            if (lt.noError() && !rt.subtypeOf(lt)) {
                 issue(new IncompatBinOpError(stmt.assignPos, lt.toString(), "=", rt.toString()));
             }
         }
@@ -739,11 +740,19 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             for(var list:typeListList)
             {
                 var ans = getInferior(list);
+
+                if(ans.eq(BuiltInType.ERROR))
+                {
+                    return BuiltInType.ERROR;
+                }
+
                 finalPara.add(ans);
             }
-
             var finalReturn = getSuperior(returnTypeList);
-            return new FunType(finalReturn, finalPara);
+            if(finalReturn.noError())
+                return new FunType(finalReturn, finalPara);
+            else
+                return BuiltInType.ERROR;
         }
         else if(condidate.eq(BuiltInType.NULL))
         {
@@ -757,6 +766,7 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         }
         return condidate;
     }
+
     public Type getInferior(List<Type> typeList)
     {
         var condidate = typeList.get(0);
@@ -784,7 +794,9 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                 }
                 if(isInf)
                     return type;
+
             }
+            return BuiltInType.ERROR;
         }
         else if(condidate.isFuncType())
         {
@@ -823,10 +835,15 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             for(var list:typeListList)
             {
                 var ans = getSuperior(list);
+                if(ans.eq(BuiltInType.ERROR))
+                    return BuiltInType.ERROR;
                 finalPara.add(ans);
             }
             var finalReturn = getInferior(returnTypeList);
-            return new FunType(finalReturn, finalPara);
+            if(finalReturn.noError())
+                return new FunType(finalReturn, finalPara);
+            else
+                return BuiltInType.ERROR;
         }
         else if(condidate.eq(BuiltInType.NULL))
             return BuiltInType.NULL;
@@ -852,7 +869,6 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                         issue(new MissingReturnError(lambda.body.pos));
                         reported = true;
                     }
-
                 }
                 var returnType = getSuperior(lambda.symbol.returnTypeList);
                 if(returnType.noError())
@@ -867,7 +883,6 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         else
         {
             lambda.expr.accept(this, ctx);
-
             lambda.symbol.setReturnType(lambda.expr.type);
             lambda.type = lambda.symbol.type;
         }
