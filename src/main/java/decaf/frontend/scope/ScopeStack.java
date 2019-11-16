@@ -73,8 +73,7 @@ public class ScopeStack {
     }
 
     public LambdaSymbol currentLambda() {
-        Objects.requireNonNull(currLambda);
-        return currLambda;
+        return lambdaScopeStack.peek().getOwner();
     }
 
     /**
@@ -100,7 +99,7 @@ public class ScopeStack {
             inLambdaScope = false;
         } else if (scope.isLambdaScope()) {
             var lambdaScope = (LambdaScope) scope;
-            currLambda = lambdaScope.getOwner();
+            lambdaScopeStack.push(lambdaScope);
             inMethodScope = false;
             inLambdaScope = true;
         }
@@ -117,6 +116,8 @@ public class ScopeStack {
     public void close() {
         assert !scopeStack.isEmpty();
         Scope scope = scopeStack.pop();
+        if(scope.isLambdaScope())
+            lambdaScopeStack.pop();
         if (scope.isClassScope()) {
             while (!scopeStack.isEmpty()) {
                 scopeStack.pop();
@@ -206,9 +207,9 @@ public class ScopeStack {
     }
 
     private Stack<Scope> scopeStack = new Stack<>();
+    private Stack<LambdaScope> lambdaScopeStack = new Stack<>();
     private ClassSymbol currClass;
     private MethodSymbol currMethod;
-    private LambdaSymbol currLambda;
 
     public boolean inMethodScope = false;
     public boolean inLambdaScope = false;

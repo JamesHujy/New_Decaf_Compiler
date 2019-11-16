@@ -19,7 +19,6 @@ public final class LambdaSymbol extends Symbol{
     public LambdaScope scope;
 
     public ArrayList<Type> returnTypeList = new ArrayList<>();
-    public ArrayList<Pos> returnPos = new ArrayList<>();
 
     public LambdaSymbol(Type returnType, List<Type> argTypes, LambdaScope scope, Pos pos) {
         super("lambda@"+pos.toString(), BuiltInType.NULL, pos);

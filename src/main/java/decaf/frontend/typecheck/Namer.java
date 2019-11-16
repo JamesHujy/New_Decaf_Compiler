@@ -168,6 +168,7 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
 
     @Override
     public void visitClassDef(Tree.ClassDef clazz, ScopeStack ctx) {
+
         if (clazz.resolved) return;
 
         if (clazz.hasParent()) {
@@ -185,8 +186,11 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             var parentAbstract = clazz.superClass.symbol.getAbstractMethod();
             for(var method:parentAbstract)
             {
+
                 if(!clazz.symbol.scope.containsKey(method))
                 {
+                    System.out.println("classname:"+clazz.name);
+                    System.out.println(method);
                     issue(new BadAbstractMethodError(clazz.pos, clazz.name));
                     hasAbstractError = true;
                     break;
@@ -270,7 +274,6 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                     } else {
                         issue(new BadOverrideError(method.pos, method.name, suspect.owner.name));
                     }
-
                     return;
                 }
             }

@@ -84,8 +84,8 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         for (var stmt : block.stmts) {
             stmt.accept(this, ctx);
         }
-        ctx.close();
         block.returns = !block.stmts.isEmpty() && block.stmts.get(block.stmts.size() - 1).returns;
+        ctx.close();
     }
 
     @Override
@@ -157,13 +157,23 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             stmt.returnType = actual;
         }
         else if(ctx.inLambdaScope) {
-            stmt.expr.ifPresent(e -> e.accept(this, ctx));
-            var actual = stmt.expr.map(e -> e.type).orElse(BuiltInType.VOID);
-            stmt.returns = stmt.expr.isPresent();
-            stmt.returnType = actual;
+            if(stmt.expr.isPresent())
+            {
+                stmt.expr.get().accept(this, ctx);
+                stmt.returns = true;
+                stmt.returnType = stmt.expr.get().type;
+            }
+            else
+            {
+                stmt.returns = false;
+                stmt.returnType = BuiltInType.VOID;
+            }
+
+            var actual = stmt.returnType;
+
             var lambdaSymbol = ctx.currentLambda();
+
             lambdaSymbol.returnTypeList.add(actual);
-            lambdaSymbol.returnPos.add(stmt.pos);
         }
 
     }
@@ -218,7 +228,6 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
     public void visitReadLine(Tree.ReadLine readStringExpr, ScopeStack ctx) {
         readStringExpr.type = BuiltInType.STRING;
     }
-
 
     @Override
     public void visitUnary(Tree.Unary expr, ScopeStack ctx) {
@@ -515,7 +524,6 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             expr.type = lambda.type;
 
         }
-
     }
 
     private void typeCall(Tree.Call call, boolean thisClass, String className, ScopeStack ctx, boolean requireStatic) {
@@ -565,10 +573,7 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                 issue(new NotCallableError(call.pos, symbol.get().type.toString()));
             }
         } else if(localSymbol.isPresent()) {
-            System.out.println(call.toString());
             var localSymbolGet = localSymbol.get();
-            System.out.println(localSymbolGet.type);
-
             if(localSymbolGet.type.isFuncType())
             {
                 var args = call.args;
@@ -660,6 +665,174 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         }
     }
 
+    public Type getSuperior(List<Type> typeList)
+    {
+        if(typeList.size()==0)
+            return BuiltInType.VOID;
+        var condidate = typeList.get(0);
+        if(condidate.isBaseType() || condidate.isVoidType())
+        {
+            for(var type:typeList)
+            {
+                if(!type.eq(condidate))
+                    return BuiltInType.ERROR;
+            }
+            return condidate;
+        }
+        else if (condidate.isClassType())
+        {
+            var classType = (ClassType) condidate;
+            while(true){
+                boolean hasError = false;
+                for(var type:typeList)
+                {
+                    if(!type.subtypeOf(classType))
+                    {
+                        hasError = true;
+                        break;
+                    }
+                }
+                if(hasError)
+                {
+                    if(classType.superType.isPresent())
+                        classType = classType.superType.get();
+                    else
+                        return BuiltInType.ERROR;
+                }
+                else return classType;
+            }
+        }
+        else if(condidate.isFuncType())
+        {
+            var functype = (FunType) condidate;
+            ArrayList<ArrayList<Type>> typeListList = new ArrayList<>();
+            ArrayList<Type> returnTypeList = new ArrayList<>();
+            for(var type:typeList)
+            {
+                if(!type.isFuncType())
+                    return BuiltInType.ERROR;
+                else {
+                    var temp = (FunType) type;
+                    if(temp.argTypes.size() != functype.argTypes.size())
+                        return BuiltInType.ERROR;
+                }
+            }
+            for(int i = 0;i < functype.argTypes.size();i++)
+            {
+                ArrayList<Type> tempList = new ArrayList<>();
+                typeListList.add(tempList);
+            }
+            for(var type:typeList)
+            {
+                var temp = (FunType) type;
+                returnTypeList.add(((FunType) type).returnType);
+                int index = 0;
+                for(var paraType:temp.argTypes)
+                {
+                    var list = typeListList.get(index);
+                    list.add(paraType);
+                    typeListList.set(index, list);
+                    index += 1;
+                }
+            }
+            ArrayList<Type> finalPara = new ArrayList<>();
+            for(var list:typeListList)
+            {
+                var ans = getInferior(list);
+                finalPara.add(ans);
+            }
+
+            var finalReturn = getSuperior(returnTypeList);
+            return new FunType(finalReturn, finalPara);
+        }
+        else if(condidate.eq(BuiltInType.NULL))
+        {
+            if(typeList.size() == 1)
+                return BuiltInType.NULL;
+            else
+            {
+                typeList.remove(0);
+                return getSuperior(typeList);
+            }
+        }
+        return condidate;
+    }
+    public Type getInferior(List<Type> typeList)
+    {
+        var condidate = typeList.get(0);
+        if(condidate.isBaseType() || condidate.isVoidType())
+        {
+            for(var type:typeList)
+            {
+                if(!type.eq(condidate))
+                    return BuiltInType.ERROR;
+            }
+            return condidate;
+        }
+        else if (condidate.isClassType())
+        {
+            for(var type:typeList)
+            {
+                boolean isInf = true;
+                for(var typeR:typeList)
+                {
+                    if(!type.subtypeOf(typeR))
+                    {
+                        isInf = false;
+                        break;
+                    }
+                }
+                if(isInf)
+                    return type;
+            }
+        }
+        else if(condidate.isFuncType())
+        {
+            var functype = (FunType) condidate;
+            ArrayList<ArrayList<Type>> typeListList = new ArrayList<>();
+            ArrayList<Type> returnTypeList = new ArrayList<>();
+            for(var type:typeList)
+            {
+                if(!type.isFuncType())
+                    return BuiltInType.ERROR;
+                else {
+                    var temp = (FunType) type;
+                    if(temp.argTypes.size() != functype.argTypes.size())
+                        return BuiltInType.ERROR;
+                }
+            }
+            for(int i = 0;i < functype.argTypes.size();i++)
+            {
+                ArrayList<Type> tempList = new ArrayList<>();
+                typeListList.add(tempList);
+            }
+            for(var type:typeList)
+            {
+                var temp = (FunType) type;
+                returnTypeList.add(((FunType) type).returnType);
+                int index = 0;
+                for(var paraType:temp.argTypes)
+                {
+                    var list = typeListList.get(index);
+                    list.add(paraType);
+                    typeListList.set(index, list);
+                    index += 1;
+                }
+            }
+            ArrayList<Type> finalPara = new ArrayList<>();
+            for(var list:typeListList)
+            {
+                var ans = getSuperior(list);
+                finalPara.add(ans);
+            }
+            var finalReturn = getInferior(returnTypeList);
+            return new FunType(finalReturn, finalPara);
+        }
+        else if(condidate.eq(BuiltInType.NULL))
+            return BuiltInType.NULL;
+        return condidate;
+    }
+
     @Override
     public void visitLambda(Tree.Lambda lambda, ScopeStack ctx) {
         ctx.open(lambda.scope);
@@ -671,78 +844,35 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                 lambda.type = lambda.symbol.type;
             }
             else {
-                var typeList = lambda.symbol.returnTypeList;
-                var posList = lambda.symbol.returnPos;
-                System.out.println("PrintTypeList");
-                for(var type:typeList)
-                    System.out.println(type);
-                var condidateType = typeList.get(0);
-                int length = typeList.size();
-                if(condidateType.isBaseType())
+                boolean reported = false;
+                for(var type:lambda.symbol.returnTypeList)
                 {
-                    for(int i = 1; i < length; i++)
+                    if(!type.isVoidType() && !lambda.body.returns && !reported)
                     {
-                        var type = typeList.get(i);
-                        if(!condidateType.eq(type))
-                        {
-                            issue(new IncompatibleReturnError(posList.get(i)));
-                            break;
-                        }
+                        issue(new MissingReturnError(lambda.body.pos));
+                        reported = true;
                     }
-                    lambda.symbol.setReturnType(condidateType);
+
+                }
+                var returnType = getSuperior(lambda.symbol.returnTypeList);
+                if(returnType.noError())
+                {
+                    lambda.symbol.setReturnType(returnType);
                     lambda.type = lambda.symbol.type;
                 }
-                else if(condidateType.isClassType()){
-                    var classType = (ClassType) condidateType;
-                    boolean hasError = false;
-                    for(int i = 1;i < length; i++)
-                    {
-                        var type = typeList.get(i);
-                        if(!type.subtypeOf(classType))
-                        {
-                            hasError = true;
-                            break;
-                        }
-                    }
-                    if(!hasError)
-                    {
-                        lambda.symbol.setReturnType(condidateType);
-                        lambda.type = lambda.symbol.type;
-                        return;
-                    }
-                    else {
-
-                        while(classType.superType.isPresent())
-                        {
-                            classType = classType.superType.get();
-                            hasError = false;
-                            for(int i = 1;i < length; i++)
-                            {
-                                var type = typeList.get(i);
-                                if(!type.subtypeOf(classType))
-                                {
-                                    hasError = true;
-                                    break;
-                                }
-                            }
-                            if(!hasError){
-                                lambda.symbol.setReturnType(condidateType);
-                                lambda.type = lambda.symbol.type;
-                                return;
-                            }
-                        }
-                        issue(new IncompatibleReturnError(lambda.pos));
-                    }
-                }
+                else
+                    issue(new IncompatibleReturnError(lambda.body.pos));
             }
         }
         else
         {
             lambda.expr.accept(this, ctx);
+
             lambda.symbol.setReturnType(lambda.expr.type);
             lambda.type = lambda.symbol.type;
         }
         ctx.close();
+
 
     }
     // Only usage: check if an initializer cyclically refers to the declared variable, e.g. var x = x + 1
