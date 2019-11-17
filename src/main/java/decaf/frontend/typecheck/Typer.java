@@ -369,7 +369,7 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
 
     @Override
     public void visitVarSel(Tree.VarSel expr, ScopeStack ctx) {
-
+        System.out.println("visit varsel" + expr+expr.pos);
         if (expr.receiver.isEmpty()) {
             // Variable, which should be complicated since a legal variable could refer to a local var,
             // a visible member var, and a class name.
@@ -449,6 +449,17 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                     }
                 }
                 return;
+            }
+            else if(expr.name.equals("length")) {
+                if (v1.type.isArrayType())
+                {
+                    ArrayList<Type> argsList = new ArrayList<>();
+                    expr.type = new FunType(BuiltInType.INT, argsList);
+                }
+                else
+                {
+                    issue(new NotClassFieldError(expr.pos, v1.name, v1.type.toString()));
+                }
             }
         }
 
@@ -631,33 +642,26 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                     }
                 }
             } else {
+                System.out.println("not callable2");
                 issue(new NotCallableError(call.pos, symbol.get().type.toString()));
             }
         } else if(localSymbol.isPresent()) {
             var localSymbolGet = localSymbol.get();
-            if(localSymbolGet.isMethodSymbol())
+            System.out.println(localSymbolGet.isVarSymbol());
+            if(localSymbolGet.isMethodSymbol() || (localSymbolGet.isVarSymbol() && localSymbolGet.type.isFuncType()))
             {
                 var args = call.args;
                 var localSymbolType = (FunType)localSymbolGet.type;
                 call.type = localSymbolType.returnType;
+                System.out.println(call.expr+"'s type is "+call.type);
                 System.out.println(call.type);
                 if (localSymbolType.argTypes.size() != args.size()) {
                     issue(new BadArgCountError(call.pos, localSymbolGet.name, localSymbolType.argTypes.size(), args.size()));
                 }
             }
-            else if(localSymbolGet.isVarSymbol() && localSymbolGet.type.isFuncType())
-            {
-                var args = call.args;
-                var lambdaType = (FunType)localSymbolGet.type;
-                call.type = lambdaType.returnType;
-                System.out.println(call.type);
-                if(lambdaType.argTypes.size() != args.size())
-                {
-                    issue(new BadArgCountError(call.pos, localSymbolGet.name, lambdaType.argTypes.size(), args.size()));
-                }
-            }
             else
             {
+                System.out.println("not callable1");
                 issue(new NotCallableError(call.pos, localSymbolGet.type.toString()));
             }
 
@@ -668,6 +672,7 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             else
                 issue(new UndeclVarError(call.expr.pos, methodName));
         }
+        System.out.println("call end");
     }
 
     @Override
@@ -714,9 +719,16 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         else
             initVal = stmt.VarExpr;
 
+
+
+
         localVarDefPos = Optional.ofNullable(stmt.id.pos);
+
         initVal.accept(this, ctx);
+        if(initVal instanceof Tree.Lambda)
+            ctx.removeDefining(stmt.name);
         localVarDefPos = Optional.empty();
+
 
         if(!stmt.isVar)
         {
@@ -926,6 +938,7 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
     @Override
     public void visitLambda(Tree.Lambda lambda, ScopeStack ctx) {
         ctx.open(lambda.scope);
+        System.out.println(lambda.isBlock);
         if(lambda.isBlock)
         {
             lambda.body.accept(this,ctx);

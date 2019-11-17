@@ -7,10 +7,7 @@ import decaf.frontend.symbol.Symbol;
 import decaf.frontend.tree.Pos;
 import decaf.frontend.tree.Tree;
 
-import java.util.ListIterator;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.Stack;
+import java.util.*;
 import java.util.function.Predicate;
 
 /**
@@ -88,7 +85,7 @@ public class ScopeStack {
     public void open(Scope scope) {
         assert !scope.isGlobalScope();
         if (scope.isClassScope()) {
-            assert !currentScope().isFormalOrLocalScope();
+            assert !currentScope().isFormalOrLocalScopeOrLambda();
             var classScope = (ClassScope) scope;
             classScope.parentScope.ifPresent(this::open);
             currClass = classScope.getOwner();
@@ -161,8 +158,14 @@ public class ScopeStack {
      * @return innermost conflicting symbol (if any)
      */
     public Optional<Symbol> findConflict(String key) {
-        if (currentScope().isFormalOrLocalScope())
-            return findWhile(key, Scope::isFormalOrLocalScope, whatever -> true).or(() -> global.find(key));
+        if (currentScope().isFormalOrLocalScopeOrLambda())
+            return findWhile(key, Scope::isFormalOrLocalScopeOrLambda, whatever -> true).or(() -> global.find(key));
+        return lookup(key);
+    }
+
+    public Optional<Symbol> findConflictLocally(String key) {
+        if (currentScope().isLocalScope())
+            return findWhile(key, Scope::isLocalScope, whatever -> true).or(() -> global.find(key));
         return lookup(key);
     }
 
@@ -211,6 +214,7 @@ public class ScopeStack {
     }
     private Stack<Scope> scopeStack = new Stack<>();
     private Stack<LambdaScope> lambdaScopeStack = new Stack<>();
+    private Map<String, Pos> definingVar = new TreeMap<>();
     private ClassSymbol currClass;
     private MethodSymbol currMethod;
 
@@ -225,9 +229,31 @@ public class ScopeStack {
         return cond.test(global) ? global.find(key) : Optional.empty();
     }
 
+    public void addDefining(String name, Pos pos){
+        definingVar.put(name, pos);
+    }
+
+    public void removeDefining(String name) {
+        definingVar.remove(name);
+    }
+
+    public boolean judgeContain(String var){
+        return definingVar.keySet().contains(var);
+    }
+
+    public Pos getPos(String name){
+        return definingVar.get(name);
+    }
+
     public void showScope(){
         for(var scope:scopeStack)
             System.out.println(scope.kind);
         System.out.println("end");
+    }
+
+    public void showKey(){
+        System.out.println("show key");
+        for(var key:definingVar.keySet())
+            System.out.println(key);
     }
 }

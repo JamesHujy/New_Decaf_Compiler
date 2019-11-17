@@ -167,6 +167,11 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
     }
 
     @Override
+    public void visitBinary(Tree.Binary expr, ScopeStack ctx) {
+        expr.lhs.accept(this, ctx);
+        expr.rhs.accept(this, ctx);
+    }
+    @Override
     public void visitClassDef(Tree.ClassDef clazz, ScopeStack ctx) {
 
         if (clazz.resolved) return;
@@ -189,8 +194,6 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
 
                 if(!clazz.symbol.scope.containsKey(method))
                 {
-                    System.out.println("classname:"+clazz.name);
-                    System.out.println(method);
                     issue(new BadAbstractMethodError(clazz.pos, clazz.name));
                     hasAbstractError = true;
                     break;
@@ -223,7 +226,26 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             var lambda = (Tree.Lambda) expr.expr;
             lambda.accept(this, ctx);
         }
+
     }
+
+    @Override
+    public void visitExprEval(Tree.ExprEval expr, ScopeStack ctx)
+    {
+        if(expr.expr instanceof Tree.Lambda)
+        {
+            var lambda = (Tree.Lambda) expr.expr;
+            lambda.accept(this, ctx);
+        }
+    }
+
+    @Override
+    public void visitVarSel(Tree.VarSel expr, ScopeStack ctx)
+    {
+        var earlier = ctx.findConflict(expr.name);
+
+    }
+
     @Override
     public void visitVarDef(Tree.VarDef varDef, ScopeStack ctx) {
         varDef.typeLit.accept(this, ctx);
@@ -322,10 +344,21 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
     @Override
     public void visitLocalVarDef(Tree.LocalVarDef def, ScopeStack ctx) {
         def.typeLit.accept(this, ctx);
-        if(def.isVar)
-            def.VarExpr.accept(this,ctx);
-        else if(def.initVal.isPresent())
+
+        if(ctx.judgeContain(def.name))
+            issue(new DeclConflictError(def.pos, def.name, ctx.getPos(def.name)));
+
+        ctx.addDefining(def.name, def.pos);
+        if(!def.isVar && def.initVal.isPresent())
+        {
             def.initVal.get().accept(this, ctx);
+        }
+        else if(def.isVar)
+        {
+            def.VarExpr.accept(this, ctx);
+        }
+
+        ctx.removeDefining(def.name);
         var earlier = ctx.findConflict(def.name);
         if (earlier.isPresent()) {
             issue(new DeclConflictError(def.pos, def.name, earlier.get().pos));

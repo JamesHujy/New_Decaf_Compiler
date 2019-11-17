@@ -103,8 +103,8 @@ public abstract class Scope implements Iterable<Symbol> {
         return false;
     }
 
-    public boolean isFormalOrLocalScope() {
-        return isFormalScope() || isLocalScope();
+    public boolean isFormalOrLocalScopeOrLambda() {
+        return isFormalScope() || isLocalScope() || isLambdaScope();
     }
 
     protected Map<String, Symbol> symbols = new TreeMap<>();
