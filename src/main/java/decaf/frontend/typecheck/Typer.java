@@ -502,9 +502,15 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
     public void visitIndexSel(Tree.IndexSel expr, ScopeStack ctx) {
         expr.array.accept(this, ctx);
         expr.index.accept(this, ctx);
+
         var at = expr.array.type;
         var it = expr.index.type;
 
+        if(!at.noError())
+        {
+            expr.type = BuiltInType.ERROR;
+            return;
+        }
         if (!at.isArrayType()) {
             issue(new NotArrayError(expr.array.pos));
             expr.type = BuiltInType.ERROR;
@@ -524,14 +530,17 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         Type rt;
         Tree.VarSel varsel;
         Tree.Lambda lambda;
+
         if(expr.expr instanceof Tree.VarSel)
         {
+            System.out.println(expr.expr+" is varsel");
             varsel = (Tree.VarSel) expr.expr;
             if (varsel.receiver.isPresent()) {
                 var receiver = varsel.receiver.get();
 
                 allowClassNameVar = true;
                 receiver.accept(this, ctx);
+                System.out.println(receiver+receiver.type.toString());
                 allowClassNameVar = false;
 
                 if (receiver instanceof Tree.VarSel) {
@@ -594,6 +603,62 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             expr.type = returntype;
             if(expr.args.size() != lambda.symbol.argTypes.size())
                 issue(new BadCountArgLambdaError(expr.pos, lambda.symbol.argTypes.size(), expr.args.size()));
+            var iter1 = lambda.symbol.argTypes.iterator();
+
+            var args = expr.args;
+            for (var arg : args) {
+                arg.accept(this, ctx);
+            }
+
+            var iter2 = expr.args.iterator();
+            for (int i = 1; iter1.hasNext() && iter2.hasNext(); i++) {
+                Type t1 = iter1.next();
+                Tree.Expr e = iter2.next();
+                Type t2 = e.type;
+                if (t2.noError() && !t2.subtypeOf(t1)) {
+                    issue(new BadArgTypeError(e.pos, i, t2.toString(), t1.toString()));
+                }
+            }
+        }
+        else if(expr.expr instanceof Tree.Call)
+        {
+            System.out.println(expr+"is call and prepare to accept");
+            expr.expr.accept(this, ctx);
+            System.out.println(expr.expr+"is "+expr.expr.type);
+            if(!expr.expr.type.noError())
+                return;
+            System.out.println(expr+"is call and end accept");
+
+            var args = expr.args;
+            for (var arg : args) {
+                arg.accept(this, ctx);
+            }
+
+            var varselType = (FunType)expr.expr.type;
+            if (varselType.arity() != expr.args.size()) {
+                issue(new BadCountArgLambdaError(expr.pos, varselType.argTypes.size(), expr.args.size()));
+            }
+            var iter1 = varselType.argTypes.iterator();
+            var iter2 = expr.args.iterator();
+            for (int i = 1; iter1.hasNext() && iter2.hasNext(); i++) {
+                Type t1 = iter1.next();
+                Tree.Expr e = iter2.next();
+                Type t2 = e.type;
+                if (t2.noError() && !t2.subtypeOf(t1)) {
+                    issue(new BadArgTypeError(e.pos, i, t2.toString(), t1.toString()));
+                }
+            }
+            expr.type = ((FunType)(expr.expr.type)).returnType;
+        }
+        else if(expr.expr instanceof Tree.IndexSel)
+        {
+            var indexSel = (Tree.IndexSel) expr.expr;
+            indexSel.accept(this, ctx);
+            expr.expr.type = indexSel.type;
+            if(!expr.expr.type.isFuncType()) {
+                issue(new NotCallableError(expr.pos, expr.expr.type.toString()));
+            }
+            expr.type = BuiltInType.ERROR;
         }
     }
 
@@ -642,26 +707,41 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                     }
                 }
             } else {
-                System.out.println("not callable2");
                 issue(new NotCallableError(call.pos, symbol.get().type.toString()));
             }
         } else if(localSymbol.isPresent()) {
             var localSymbolGet = localSymbol.get();
-            System.out.println(localSymbolGet.isVarSymbol());
             if(localSymbolGet.isMethodSymbol() || (localSymbolGet.isVarSymbol() && localSymbolGet.type.isFuncType()))
             {
-                var args = call.args;
+
                 var localSymbolType = (FunType)localSymbolGet.type;
                 call.type = localSymbolType.returnType;
-                System.out.println(call.expr+"'s type is "+call.type);
-                System.out.println(call.type);
+                System.out.println(call+"is type of "+call.type);
+
+                // typing args
+                var args = call.args;
+                for (var arg : args) {
+                    arg.accept(this, ctx);
+                }
+
                 if (localSymbolType.argTypes.size() != args.size()) {
                     issue(new BadArgCountError(call.pos, localSymbolGet.name, localSymbolType.argTypes.size(), args.size()));
+                }
+
+                var iter1 = localSymbolType.argTypes.iterator();
+                var iter2 = call.args.iterator();
+                for (int i = 1; iter1.hasNext() && iter2.hasNext(); i++) {
+                    Type t1 = iter1.next();
+                    Tree.Expr e = iter2.next();
+                    Type t2 = e.type;
+                    if (t2.noError() && !t2.subtypeOf(t1)) {
+                        issue(new BadArgTypeError(e.pos, i, t2.toString(), t1.toString()));
+                    }
                 }
             }
             else
             {
-                System.out.println("not callable1");
+                call.type = BuiltInType.ERROR;
                 issue(new NotCallableError(call.pos, localSymbolGet.type.toString()));
             }
 
@@ -672,7 +752,6 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             else
                 issue(new UndeclVarError(call.expr.pos, methodName));
         }
-        System.out.println("call end");
     }
 
     @Override
@@ -719,16 +798,12 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         else
             initVal = stmt.VarExpr;
 
-
-
-
         localVarDefPos = Optional.ofNullable(stmt.id.pos);
 
         initVal.accept(this, ctx);
-        if(initVal instanceof Tree.Lambda)
-            ctx.removeDefining(stmt.name);
-        localVarDefPos = Optional.empty();
 
+        System.out.println(stmt.name+stmt.pos+initVal.type);
+        localVarDefPos = Optional.empty();
 
         if(!stmt.isVar)
         {
@@ -938,7 +1013,6 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
     @Override
     public void visitLambda(Tree.Lambda lambda, ScopeStack ctx) {
         ctx.open(lambda.scope);
-        System.out.println(lambda.isBlock);
         if(lambda.isBlock)
         {
             lambda.body.accept(this,ctx);
