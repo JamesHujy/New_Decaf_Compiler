@@ -67,6 +67,8 @@ public final class VarSymbol extends Symbol {
      */
     public Temp temp;
 
+    public boolean isLambda = false;
+
     public void setType(Type type)
     {
         this.type = type;

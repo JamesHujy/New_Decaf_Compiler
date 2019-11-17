@@ -369,7 +369,7 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
 
     @Override
     public void visitVarSel(Tree.VarSel expr, ScopeStack ctx) {
-        System.out.println(expr.toString()+expr.pos);
+
         if (expr.receiver.isEmpty()) {
             // Variable, which should be complicated since a legal variable could refer to a local var,
             // a visible member var, and a class name.
@@ -421,14 +421,12 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         allowClassNameVar = false;
         var rt = receiver.type;
         expr.type = BuiltInType.ERROR;
-        System.out.println("receiver"+receiver.toString()+receiver.type);
 
         if(receiver instanceof Tree.VarSel)
         {
             var v1 = (Tree.VarSel) receiver;
             if(v1.isClassName)
             {
-                System.out.println("in classname"+rt);
                 var clazz = ctx.getClass(v1.name);
                 String methodName = expr.name;
 
@@ -510,6 +508,7 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
 
     @Override
     public void visitCall(Tree.Call expr, ScopeStack ctx) {
+        System.out.println("visit call "+expr+expr.pos.toString());
         expr.type = BuiltInType.ERROR;
         Type rt;
         Tree.VarSel varsel;
@@ -580,11 +579,15 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         {
             lambda = (Tree.Lambda) expr.expr;
             lambda.accept(this, ctx);
-            expr.type = lambda.type;
+            var returntype = ((FunType) lambda.type).returnType;
+            expr.type = returntype;
+            if(expr.args.size() != lambda.symbol.argTypes.size())
+                issue(new BadCountArgLambdaError(expr.pos, lambda.symbol.argTypes.size(), expr.args.size()));
         }
     }
 
     private void typeCall(Tree.Call call, boolean thisClass, String className, ScopeStack ctx, boolean requireStatic) {
+        System.out.println("varsel"+call+call.pos);
         var clazz = thisClass ? ctx.currentClass() : ctx.getClass(className);
         var varSel = (Tree.VarSel) call.expr;
         String methodName = varSel.name;
@@ -632,12 +635,25 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             }
         } else if(localSymbol.isPresent()) {
             var localSymbolGet = localSymbol.get();
-            if(localSymbolGet.type.isFuncType())
+            if(localSymbolGet.isMethodSymbol())
             {
                 var args = call.args;
                 var localSymbolType = (FunType)localSymbolGet.type;
+                call.type = localSymbolType.returnType;
+                System.out.println(call.type);
                 if (localSymbolType.argTypes.size() != args.size()) {
                     issue(new BadArgCountError(call.pos, localSymbolGet.name, localSymbolType.argTypes.size(), args.size()));
+                }
+            }
+            else if(localSymbolGet.isVarSymbol() && localSymbolGet.type.isFuncType())
+            {
+                var args = call.args;
+                var lambdaType = (FunType)localSymbolGet.type;
+                call.type = lambdaType.returnType;
+                System.out.println(call.type);
+                if(lambdaType.argTypes.size() != args.size())
+                {
+                    issue(new BadArgCountError(call.pos, localSymbolGet.name, lambdaType.argTypes.size(), args.size()));
                 }
             }
             else
@@ -718,7 +734,8 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             {
                 issue(new AssignVarVoidError(stmt.id.pos, stmt.id.name));
             }
-            stmt.symbol.setType(initVal.type);
+
+            stmt.symbol.type = initVal.type;
         }
     }
 
