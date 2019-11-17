@@ -1187,6 +1187,7 @@ public abstract class Tree {
         // For type check
         public VarSymbol symbol;
         public boolean isClassName = false;
+        public boolean isMethod = false;
 
         public VarSel(Optional<Expr> receiver, Id variable, Pos pos) {
             super(Kind.VAR_SEL, "VarSel", pos);

@@ -95,13 +95,10 @@ public class ScopeStack {
         } else if (scope.isFormalScope()) {
             var formalScope = (FormalScope) scope;
             currMethod = formalScope.getOwner();
-            inMethodScope = true;
-            inLambdaScope = false;
+
         } else if (scope.isLambdaScope()) {
             var lambdaScope = (LambdaScope) scope;
             lambdaScopeStack.push(lambdaScope);
-            inMethodScope = false;
-            inLambdaScope = true;
         }
         scopeStack.push(scope);
     }
@@ -117,7 +114,10 @@ public class ScopeStack {
         assert !scopeStack.isEmpty();
         Scope scope = scopeStack.pop();
         if(scope.isLambdaScope())
+        {
             lambdaScopeStack.pop();
+        }
+
         if (scope.isClassScope()) {
             while (!scopeStack.isEmpty()) {
                 scopeStack.pop();
@@ -206,13 +206,13 @@ public class ScopeStack {
         currentScope().declare(symbol);
     }
 
+    public boolean judgeLambda(){
+        return !lambdaScopeStack.empty();
+    }
     private Stack<Scope> scopeStack = new Stack<>();
     private Stack<LambdaScope> lambdaScopeStack = new Stack<>();
     private ClassSymbol currClass;
     private MethodSymbol currMethod;
-
-    public boolean inMethodScope = false;
-    public boolean inLambdaScope = false;
 
     private Optional<Symbol> findWhile(String key, Predicate<Scope> cond, Predicate<Symbol> validator) {
         ListIterator<Scope> iter = scopeStack.listIterator(scopeStack.size());

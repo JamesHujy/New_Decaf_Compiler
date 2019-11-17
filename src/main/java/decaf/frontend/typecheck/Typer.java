@@ -95,7 +95,28 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         stmt.rhs.accept(this, ctx);
         var lt = stmt.lhs.type;
         var rt = stmt.rhs.type;
+        if(ctx.judgeLambda())
+        {
+            if(stmt.lhs instanceof Tree.VarSel && !((Tree.VarSel)stmt.lhs).receiver.isPresent())
+            {
+                var varsel = (Tree.VarSel) stmt.lhs;
+                var captureSymbol = ctx.lookupBefore(varsel.name, ctx.currentLambda().pos);
+                if(captureSymbol.isPresent() && !ctx.currentLambda().scope.find(varsel.name).isPresent()
+                        && !captureSymbol.get().domain().equals(ctx.currentClass().scope)){
+                    issue(new AssignCaptureError(stmt.pos));
+                }
+            }
+            return;
+        }
+        if(stmt.lhs instanceof Tree.VarSel)
+        {
+            var varsel = (Tree.VarSel) stmt.lhs;
 
+            if(varsel.isMethod)
+            {
+                issue(new AssignMethodError(stmt.pos, varsel.name));
+            }
+        }
         if (lt.noError() && (!rt.subtypeOf(lt))) {
             issue(new IncompatBinOpError(stmt.pos, lt.toString(), "=", rt.toString()));
         }
@@ -147,17 +168,7 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
 
     @Override
     public void visitReturn(Tree.Return stmt, ScopeStack ctx) {
-        if(ctx.inMethodScope) {
-            var expected = ctx.currentMethod().type.returnType;
-            stmt.expr.ifPresent(e -> e.accept(this, ctx));
-            var actual = stmt.expr.map(e -> e.type).orElse(BuiltInType.VOID);
-            if (actual.noError() && !actual.subtypeOf(expected)) {
-                issue(new BadReturnTypeError(stmt.pos, expected.toString(), actual.toString()));
-            }
-            stmt.returns = stmt.expr.isPresent();
-            stmt.returnType = actual;
-        }
-        else if(ctx.inLambdaScope) {
+        if(ctx.judgeLambda()) {
             if(stmt.expr.isPresent())
             {
                 stmt.expr.get().accept(this, ctx);
@@ -175,6 +186,16 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             var lambdaSymbol = ctx.currentLambda();
 
             lambdaSymbol.returnTypeList.add(actual);
+        }
+        else{
+            var expected = ctx.currentMethod().type.returnType;
+            stmt.expr.ifPresent(e -> e.accept(this, ctx));
+            var actual = stmt.expr.map(e -> e.type).orElse(BuiltInType.VOID);
+            if (actual.noError() && !actual.subtypeOf(expected)) {
+                issue(new BadReturnTypeError(stmt.pos, expected.toString(), actual.toString()));
+            }
+            stmt.returns = stmt.expr.isPresent();
+            stmt.returnType = actual;
         }
 
     }
@@ -348,7 +369,7 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
 
     @Override
     public void visitVarSel(Tree.VarSel expr, ScopeStack ctx) {
-        System.out.println(expr+"   "+expr.pos);
+        System.out.println(expr.toString()+expr.pos);
         if (expr.receiver.isEmpty()) {
             // Variable, which should be complicated since a legal variable could refer to a local var,
             // a visible member var, and a class name.
@@ -369,7 +390,6 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                     return;
                 }
                 if (symbol.get().isClassSymbol()) { // special case: a class name
-                    System.out.println(expr + "class symbol!");
                     var clazz = (ClassSymbol) symbol.get();
                     expr.type = clazz.type;
                     expr.isClassName = true;
@@ -380,6 +400,12 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                 {
                     var method = (MethodSymbol) symbol.get();
                     expr.type = method.type;
+                    if(!method.isStatic() && ctx.currentMethod().isStatic())
+                    {
+                        issue(new RefNonStaticError(expr.pos, ctx.currentMethod().name, expr.name));
+                    }
+                    else
+                        expr.isMethod = true;
                     return;
                 }
             }
@@ -395,72 +421,71 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         allowClassNameVar = false;
         var rt = receiver.type;
         expr.type = BuiltInType.ERROR;
-        System.out.println("receiver");
-        System.out.println(receiver);
-        System.out.println(receiver.type);
-        if (receiver instanceof Tree.VarSel) {
+        System.out.println("receiver"+receiver.toString()+receiver.type);
+
+        if(receiver instanceof Tree.VarSel)
+        {
             var v1 = (Tree.VarSel) receiver;
             if(v1.isClassName)
             {
+                System.out.println("in classname"+rt);
                 var clazz = ctx.getClass(v1.name);
                 String methodName = expr.name;
+
                 var symbol = clazz.scope.lookup(methodName);
                 if(symbol.isPresent()) {
                     if (symbol.get().isMethodSymbol()) {
                         var method = (MethodSymbol) symbol.get();
                         expr.type = method.type;
-                        if (!v1.name.equals(ctx.currentClass().name) && ctx.currentMethod().isStatic() && !method.isStatic()) {
+                        if (!method.isStatic()) {
                             issue(new NotClassFieldError(expr.pos, expr.name, v1.type.toString()));
                         }
+                        else
+                            expr.isMethod = true;
+
                     } else if (symbol.get().isVarSymbol()) {
                         var var = (VarSymbol) symbol.get();
                         expr.symbol = var;
                         expr.type = var.type;
-                        if (ctx.currentMethod().isStatic()) {
-                            issue(new NotClassFieldError(expr.pos, expr.name, v1.type.toString()));
+                        issue(new NotClassFieldError(expr.pos, expr.name, v1.type.toString()));
+                    }
+                }
+                return;
+            }
+        }
+
+        if(!rt.noError())
+            return;
+        if(rt.isClassType())
+        {
+            var ct = (ClassType) rt;
+            var field = ctx.getClass(ct.name).scope.lookup(expr.name);
+            if (field.isPresent()) {
+                if(field.get().isVarSymbol())
+                {
+                    var var = (VarSymbol) field.get();
+                    if (var.isMemberVar()) {
+                        expr.symbol = var;
+                        expr.type = var.type;
+                        if (!ctx.currentClass().type.subtypeOf(var.getOwner().type)) {
+                            // member vars are protected
+                            issue(new FieldNotAccessError(expr.pos, expr.name, ct.toString()));
                         }
                     }
                 }
-            }
-
-        }
-
-        if (!rt.noError()) {
-            return;
-        }
-
-        System.out.println(receiver.type);
-        if (!rt.isClassType()) {
-            issue(new NotClassFieldError(expr.pos, expr.name, rt.toString()));
-            return;
-        }
-
-        var ct = (ClassType) rt;
-        var field = ctx.getClass(ct.name).scope.lookup(expr.name);
-        if (field.isPresent()) {
-            if(field.get().isVarSymbol())
-            {
-                var var = (VarSymbol) field.get();
-                if (var.isMemberVar()) {
-                    expr.symbol = var;
-                    expr.type = var.type;
-                    if (!ctx.currentClass().type.subtypeOf(var.getOwner().type)) {
-                        // member vars are protected
-                        issue(new FieldNotAccessError(expr.pos, expr.name, ct.toString()));
-                    }
+                else if(field.get().isMethodSymbol())
+                {
+                    var method = (MethodSymbol) field.get();
+                    expr.symbol = new VarSymbol(expr.name, method.type, method.pos);
+                    expr.type = method.type;
+                    expr.isMethod = true;
                 }
+                else {
+                    issue(new NotClassFieldError(expr.pos, expr.name, ct.toString()));
+                }
+            } else{
+                issue(new FieldNotFoundError(expr.pos, expr.name, ct.toString()));
             }
-            else if(field.get().isMethodSymbol())
-            {
-                var method = (MethodSymbol) field.get();
-                expr.symbol = new VarSymbol(expr.name, method.type, method.pos);
-                expr.type = method.type;
-            }
-            else {
-                issue(new NotClassFieldError(expr.pos, expr.name, ct.toString()));
-            }
-        } else{
-            issue(new FieldNotFoundError(expr.pos, expr.name, ct.toString()));
         }
     }
 
@@ -485,7 +510,6 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
 
     @Override
     public void visitCall(Tree.Call expr, ScopeStack ctx) {
-        System.out.println(expr);
         expr.type = BuiltInType.ERROR;
         Type rt;
         Tree.VarSel varsel;
