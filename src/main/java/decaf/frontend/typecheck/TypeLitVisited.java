@@ -8,7 +8,7 @@ import decaf.frontend.scope.ScopeStack;
 import decaf.frontend.tree.Tree;
 import decaf.frontend.tree.Visitor;
 import decaf.frontend.type.BuiltInType;
-import decaf.frontend.type.TFuncType;
+import decaf.frontend.type.FunType;
 import decaf.frontend.type.Type;
 
 import java.util.ArrayList;
@@ -79,7 +79,7 @@ public interface TypeLitVisited extends Visitor<ScopeStack>, ErrorIssuer {
             thatTypeList.add(type.type);
         }
 
-        that.type = new TFuncType(that.returnType.type, thatTypeList);
+        that.type = new FunType(that.returnType.type, thatTypeList);
     }
 
 }

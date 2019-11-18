@@ -4,7 +4,6 @@ import decaf.frontend.scope.LambdaScope;
 import decaf.frontend.tree.Pos;
 import decaf.frontend.type.BuiltInType;
 import decaf.frontend.type.FunType;
-import decaf.frontend.type.TFuncType;
 import decaf.frontend.type.Type;
 
 import java.util.ArrayList;
@@ -25,7 +24,7 @@ public final class LambdaSymbol extends Symbol{
         this.returnType = returnType;
         this.argTypes = argTypes;
         this.scope = scope;
-        type = new TFuncType(returnType, argTypes);
+        type = new FunType(returnType, argTypes);
     }
 
     @Override
