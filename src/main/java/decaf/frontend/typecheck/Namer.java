@@ -171,6 +171,12 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         expr.lhs.accept(this, ctx);
         expr.rhs.accept(this, ctx);
     }
+
+    @Override
+    public void visitUnary(Tree.Unary unary, ScopeStack ctx){
+        unary.operand.accept(this, ctx);
+    }
+
     @Override
     public void visitClassDef(Tree.ClassDef clazz, ScopeStack ctx) {
 
@@ -221,29 +227,40 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
 
     @Override
     public void visitCall(Tree.Call expr, ScopeStack ctx){
-        if(expr.expr instanceof Tree.Lambda)
-        {
-            var lambda = (Tree.Lambda) expr.expr;
-            lambda.accept(this, ctx);
-        }
-
+        expr.expr.accept(this, ctx);
+        for(var para:expr.args)
+            para.accept(this, ctx);
     }
 
     @Override
     public void visitExprEval(Tree.ExprEval expr, ScopeStack ctx)
     {
-        if(expr.expr instanceof Tree.Lambda)
-        {
-            var lambda = (Tree.Lambda) expr.expr;
-            lambda.accept(this, ctx);
-        }
+        expr.expr.accept(this, ctx);
     }
 
     @Override
     public void visitVarSel(Tree.VarSel expr, ScopeStack ctx)
     {
-        var earlier = ctx.findConflict(expr.name);
+        if(expr.receiver.isPresent())
+            expr.receiver.get().accept(this, ctx);
+    }
 
+    @Override
+    public void visitNewArray(Tree.NewArray newArray, ScopeStack ctx)
+    {
+        newArray.length.accept(this, ctx);
+    }
+
+    @Override
+    public void visitClassTest(Tree.ClassTest classTest, ScopeStack ctx)
+    {
+        classTest.obj.accept(this, ctx);
+    }
+
+    @Override
+    public void visitClassCast(Tree.ClassCast classCast, ScopeStack ctx)
+    {
+        classCast.obj.accept(this, ctx);
     }
 
     @Override
@@ -334,7 +351,6 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
     public void visitBlock(Tree.Block block, ScopeStack ctx) {
         block.scope = new LocalScope(ctx.currentScope());
         ctx.open(block.scope);
-
         for (var stmt : block.stmts) {
             stmt.accept(this, ctx);
         }
@@ -357,8 +373,9 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         {
             def.VarExpr.accept(this, ctx);
         }
-
         ctx.removeDefining(def.name);
+
+
         var earlier = ctx.findConflict(def.name);
         if (earlier.isPresent()) {
             issue(new DeclConflictError(def.pos, def.name, earlier.get().pos));
@@ -382,6 +399,7 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         loop.scope = new LocalScope(ctx.currentScope());
         ctx.open(loop.scope);
         loop.init.accept(this, ctx);
+        loop.cond.accept(this, ctx);
         for (var stmt : loop.body.stmts) {
             stmt.accept(this, ctx);
         }
@@ -390,17 +408,20 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
 
     @Override
     public void visitAssign(Tree.Assign assign, ScopeStack ctx){
+        assign.lhs.accept(this, ctx);
         assign.rhs.accept(this, ctx);
     }
 
     @Override
     public void visitIf(Tree.If stmt, ScopeStack ctx) {
+        stmt.cond.accept(this, ctx);
         stmt.trueBranch.accept(this, ctx);
         stmt.falseBranch.ifPresent(b -> b.accept(this, ctx));
     }
 
     @Override
     public void visitWhile(Tree.While loop, ScopeStack ctx) {
+        loop.cond.accept(this, ctx);
         loop.body.accept(this, ctx);
     }
 
@@ -418,6 +439,11 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             expr.accept(this, ctx);
     }
 
+    @Override
+    public void visitIndexSel(Tree.IndexSel indexSel, ScopeStack ctx){
+        indexSel.array.accept(this, ctx);
+        indexSel.index.accept(this, ctx);
+    }
     @Override
     public void visitLambda(Tree.Lambda lambda, ScopeStack ctx) {
         lambda.scope = new LambdaScope(ctx.currentScope());
