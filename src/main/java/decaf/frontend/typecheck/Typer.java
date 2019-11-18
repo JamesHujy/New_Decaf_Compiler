@@ -837,11 +837,11 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         localVarDefPos = Optional.ofNullable(stmt.id.pos);
         if(initVal instanceof Tree.Lambda)
             ctx.addDefining(stmt.name, stmt.pos);
-        ctx.showKey();
+
         initVal.accept(this, ctx);
         if(initVal instanceof Tree.Lambda)
             ctx.removeDefining(stmt.name);
-        ctx.showKey();
+
         localVarDefPos = Optional.empty();
 
         if(!stmt.isVar)

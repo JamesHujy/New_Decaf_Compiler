@@ -245,15 +245,4 @@ public class ScopeStack {
         return definingVar.get(name);
     }
 
-    public void showScope(){
-        for(var scope:scopeStack)
-            System.out.println(scope.kind);
-        System.out.println("end");
-    }
-
-    public void showKey(){
-        System.out.println("show key");
-        for(var key:definingVar.keySet())
-            System.out.println(key);
-    }
 }

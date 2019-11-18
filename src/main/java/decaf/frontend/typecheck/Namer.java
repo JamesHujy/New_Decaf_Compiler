@@ -368,7 +368,7 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         {
             if(def.initVal.get() instanceof Tree.Lambda)
                 ctx.addDefining(def.name, def.pos);
-            ctx.showKey();
+
             def.initVal.get().accept(this, ctx);
             if(def.initVal.get() instanceof Tree.Lambda)
                 ctx.removeDefining(def.name);
@@ -377,13 +377,12 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         {
             if(def.VarExpr instanceof Tree.Lambda)
                 ctx.addDefining(def.name, def.pos);
-            ctx.showKey();
+
             def.VarExpr.accept(this, ctx);
             if(def.VarExpr instanceof Tree.Lambda)
                 ctx.removeDefining(def.name);
-            ctx.showKey();
+
         }
-        ctx.showKey();
         ctx.removeDefining(def.name);
 
 
