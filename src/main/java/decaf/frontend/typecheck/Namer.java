@@ -226,9 +226,9 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
     }
 
     @Override
-    public void visitCall(Tree.Call expr, ScopeStack ctx){
+    public void visitCall(Tree.Call expr, ScopeStack ctx) {
         expr.expr.accept(this, ctx);
-        for(var para:expr.args)
+        for (var para : expr.args)
             para.accept(this, ctx);
     }
 
@@ -360,19 +360,30 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
     @Override
     public void visitLocalVarDef(Tree.LocalVarDef def, ScopeStack ctx) {
         def.typeLit.accept(this, ctx);
-
         if(ctx.judgeContain(def.name))
+        {
             issue(new DeclConflictError(def.pos, def.name, ctx.getPos(def.name)));
-
-        ctx.addDefining(def.name, def.pos);
+        }
         if(!def.isVar && def.initVal.isPresent())
         {
+            if(def.initVal.get() instanceof Tree.Lambda)
+                ctx.addDefining(def.name, def.pos);
+            ctx.showKey();
             def.initVal.get().accept(this, ctx);
+            if(def.initVal.get() instanceof Tree.Lambda)
+                ctx.removeDefining(def.name);
         }
         else if(def.isVar)
         {
+            if(def.VarExpr instanceof Tree.Lambda)
+                ctx.addDefining(def.name, def.pos);
+            ctx.showKey();
             def.VarExpr.accept(this, ctx);
+            if(def.VarExpr instanceof Tree.Lambda)
+                ctx.removeDefining(def.name);
+            ctx.showKey();
         }
+        ctx.showKey();
         ctx.removeDefining(def.name);
 
 

@@ -369,6 +369,12 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
 
     @Override
     public void visitVarSel(Tree.VarSel expr, ScopeStack ctx) {
+        if(ctx.judgeContain(expr.name))
+        {
+            issue(new UndeclVarError(expr.pos, expr.name));
+            expr.type = BuiltInType.ERROR;
+            return;
+        }
         if (expr.receiver.isEmpty()) {
             // Variable, which should be complicated since a legal variable could refer to a local var,
             // a visible member var, and a class name.
@@ -524,15 +530,19 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
 
     @Override
     public void visitCall(Tree.Call expr, ScopeStack ctx) {
-        System.out.println(expr+expr.pos.toString());
         expr.type = BuiltInType.ERROR;
         Type rt;
         Tree.VarSel varsel;
         Tree.Lambda lambda;
-
         if(expr.expr instanceof Tree.VarSel)
         {
             varsel = (Tree.VarSel) expr.expr;
+            var name = ((Tree.VarSel) expr.expr).name;
+            if(ctx.judgeContain(name))
+            {
+                issue(new UndeclVarError(expr.expr.pos, name));
+                return;
+            }
             if (varsel.receiver.isPresent()) {
                 var receiver = varsel.receiver.get();
                 allowClassNameVar = true;
@@ -825,9 +835,13 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             initVal = stmt.VarExpr;
 
         localVarDefPos = Optional.ofNullable(stmt.id.pos);
-
+        if(initVal instanceof Tree.Lambda)
+            ctx.addDefining(stmt.name, stmt.pos);
+        ctx.showKey();
         initVal.accept(this, ctx);
-
+        if(initVal instanceof Tree.Lambda)
+            ctx.removeDefining(stmt.name);
+        ctx.showKey();
         localVarDefPos = Optional.empty();
 
         if(!stmt.isVar)
