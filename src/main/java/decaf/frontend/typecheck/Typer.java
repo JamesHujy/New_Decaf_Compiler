@@ -870,7 +870,7 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         if(typeList.size()==0)
             return BuiltInType.VOID;
         var condidate = typeList.get(0);
-        if(condidate.isBaseType() || condidate.isVoidType())
+        if(condidate.isBaseType() || condidate.isVoidType() || condidate.isArrayType())
         {
             for(var type:typeList)
             {
@@ -969,7 +969,7 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
     public Type getInferior(List<Type> typeList)
     {
         var condidate = typeList.get(0);
-        if(condidate.isBaseType() || condidate.isVoidType())
+        if(condidate.isBaseType() || condidate.isVoidType() || condidate.isArrayType())
         {
             for(var type:typeList)
             {
