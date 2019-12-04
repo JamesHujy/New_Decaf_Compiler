@@ -273,6 +273,7 @@ public interface TacEmitter extends Visitor<FuncVisitor> {
 
     @Override
     default void visitCall(Tree.Call expr, FuncVisitor mv) {
+        System.out.println(expr.toString()+expr.pos);
         if (expr.isArrayLength) { // special case for array.length()
             var array = expr.receiver.get();
             array.accept(this, mv);
@@ -283,7 +284,6 @@ public interface TacEmitter extends Visitor<FuncVisitor> {
         expr.args.forEach(arg -> arg.accept(this, mv));
         var temps = new ArrayList<Temp>();
         expr.args.forEach(arg -> temps.add(arg.val));
-
         if (expr.symbol.isStatic()) {
             if (expr.symbol.type.returnType.isVoidType()) {
                 mv.visitStaticCall(expr.symbol.owner.name, expr.symbol.name, temps);

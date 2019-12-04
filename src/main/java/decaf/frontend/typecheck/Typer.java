@@ -550,10 +550,12 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                 allowClassNameVar = false;
                 if(!receiver.type.noError())
                     return;
+
                 if (receiver instanceof Tree.VarSel) {
                     var v1 = (Tree.VarSel) receiver;
+
                     if (v1.isClassName) {
-                        // Special case: invoking a static method, like MyClass.foo()
+                        // Special case: invoking a staStic method, like MyClass.foo()
                         typeCall(expr, false, v1.name, ctx, ctx.currentMethod().isStatic());
                     }
                     else if(varsel.name.equals("length")) {
@@ -569,6 +571,13 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                         else
                         {
                             issue(new NotClassFieldError(expr.expr.pos, varsel.name, v1.type.toString()));
+                        }
+                    }
+                    else{
+                        if(v1.symbol.type.isClassType())
+                        {
+                            var classname = ((ClassType)v1.symbol.type).name;
+                            typeCall(expr, false, classname, ctx, false);
                         }
                     }
                 }
