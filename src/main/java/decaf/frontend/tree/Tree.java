@@ -1186,8 +1186,7 @@ public abstract class Tree {
         // For convenience
         public String name;
         // For type check
-        public VarSymbol symbol;
-        public MethodSymbol methodSymbol;
+        public Symbol symbol;
         public boolean isClassName = false;
         public boolean isMethod = false;
 
@@ -1640,7 +1639,7 @@ public abstract class Tree {
         //
         public String methodName;
         // For type check
-        public MethodSymbol symbol;
+        public Symbol symbol;
 
         public Expr expr;
         public boolean isArrayLength = false;

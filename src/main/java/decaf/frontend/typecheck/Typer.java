@@ -406,7 +406,7 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                 {
                     var method = (MethodSymbol) symbol.get();
                     expr.type = method.type;
-                    expr.methodSymbol = method;
+                    expr.symbol = method;
                     if(!method.isStatic() && ctx.currentMethod().isStatic())
                     {
                         issue(new RefNonStaticError(expr.pos, ctx.currentMethod().name, expr.name));
@@ -442,7 +442,7 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                     if (symbol.get().isMethodSymbol()) {
                         var method = (MethodSymbol) symbol.get();
                         expr.type = method.type;
-                        expr.methodSymbol = method;
+                        expr.symbol = method;
                         if (!method.isStatic()) {
                             issue(new NotClassFieldError(expr.pos, expr.name, v1.type.toString()));
                         }
@@ -493,7 +493,7 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                 else if(field.get().isMethodSymbol())
                 {
                     var method = (MethodSymbol) field.get();
-                    expr.methodSymbol = method;
+                    expr.symbol = method;
                     expr.type = method.type;
                     expr.isMethod = true;
                 }
@@ -645,6 +645,7 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             lambda.accept(this, ctx);
             var returntype = ((FunType) lambda.type).returnType;
             expr.type = returntype;
+            expr.symbol = lambda.symbol;
             if(expr.args.size() != lambda.symbol.argTypes.size())
                 issue(new BadCountArgLambdaError(expr.pos, lambda.symbol.argTypes.size(), expr.args.size()));
             var iter1 = lambda.symbol.argTypes.iterator();
@@ -718,7 +719,8 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             if (symbol.get().isMethodSymbol()) {
                 var method = (MethodSymbol) symbol.get();
                 call.symbol = method;
-                ((Tree.VarSel) call.expr).methodSymbol = method;
+                call.symbol = method;
+                ((Tree.VarSel) call.expr).symbol = method;
                 ((Tree.VarSel) call.expr).isMethod = true;
                 call.symbol.setDomain(clazz.scope);
                 //((Tree.VarSel) call.expr).methodSymbol.setDomain(ctx.currentScope());
@@ -760,6 +762,7 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                 var functype = (FunType) symbol.get().type;
                 var symbolGet = symbol.get();
                 call.type = functype.returnType;
+                call.symbol = symbol.get();
                 //call.symbol.setDomain(ctx.currentScope());
                 ((Tree.VarSel) call.expr).symbol = new VarSymbol(((Tree.VarSel) call.expr).name, symbolGet.type, symbolGet.pos);
                 ((Tree.VarSel) call.expr).symbol.setDomain(ctx.currentScope());
@@ -796,6 +799,7 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             {
                 var localSymbolType = (FunType)localSymbolGet.type;
                 call.type = localSymbolType.returnType;
+                call.symbol = localSymbolGet;
                 //((Tree.VarSel) call.expr).symbol = new VarSymbol(((Tree.VarSel) call.expr).name, localSymbolGet.type, localSymbolGet.pos);
                 //((Tree.VarSel) call.expr).symbol.setDomain(ctx.currentScope());
                 // typing args

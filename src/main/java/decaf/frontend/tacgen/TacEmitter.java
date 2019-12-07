@@ -1,5 +1,7 @@
 package decaf.frontend.tacgen;
 
+import decaf.frontend.symbol.MethodSymbol;
+import decaf.frontend.symbol.VarSymbol;
 import decaf.frontend.tree.Tree;
 import decaf.frontend.tree.Visitor;
 import decaf.frontend.type.BuiltInType;
@@ -70,14 +72,15 @@ public interface TacEmitter extends Visitor<FuncVisitor> {
             mv.visitStoreTo(addr, assign.rhs.val);
         } else if (assign.lhs instanceof Tree.VarSel) {
             var v = (Tree.VarSel) assign.lhs;
-            if (v.symbol.isMemberVar()) {
+            var symbol = (VarSymbol) v.symbol;
+            if (symbol.isMemberVar()) {
                 var object = v.receiver.get();
                 object.accept(this, mv);
                 assign.rhs.accept(this, mv);
-                mv.visitMemberWrite(object.val, v.symbol.getOwner().name, v.name, assign.rhs.val);
+                mv.visitMemberWrite(object.val, symbol.getOwner().name, v.name, assign.rhs.val);
             } else { // local or param
                 assign.rhs.accept(this, mv);
-                mv.visitAssign(v.symbol.temp, assign.rhs.val);
+                mv.visitAssign(symbol.temp, assign.rhs.val);
             }
         }
     }
@@ -242,20 +245,37 @@ public interface TacEmitter extends Visitor<FuncVisitor> {
         };
         expr.lhs.accept(this, mv);
         expr.rhs.accept(this, mv);
+
+        if(expr.op.equals(Tree.BinaryOp.DIV) || expr.op.equals(Tree.BinaryOp.MOD))
+        {
+            var zero = mv.visitLoad(0);
+            var error = mv.visitBinary(TacInstr.Binary.Op.EQU, expr.rhs.val, zero);
+            var handler = new Consumer<FuncVisitor>() {
+                @Override
+                public void accept(FuncVisitor v) {
+                    v.visitPrint(RuntimeError.DIV_ZERO);
+                    v.visitIntrinsicCall(Intrinsic.HALT);
+                    v.visitReturn();
+                }
+            };
+            emitIfThen(error, handler, mv);
+        }
+
         expr.val = mv.visitBinary(op, expr.lhs.val, expr.rhs.val);
     }
 
     @Override
     default void visitVarSel(Tree.VarSel expr, FuncVisitor mv) {
-        System.out.println(expr);
+        System.out.println("Varsel    "+expr.toString()+expr.pos);
         if(!expr.isMethod)
         {
-            if (expr.symbol.isMemberVar()) {
+            var symbol = ((VarSymbol)expr.symbol);
+            if (symbol.isMemberVar()) {
                 var object = expr.receiver.get();
                 object.accept(this, mv);
-                expr.val = mv.visitMemberAccess(object.val, expr.symbol.getOwner().name, expr.name);
+                expr.val = mv.visitMemberAccess(object.val, symbol.getOwner().name, expr.name);
             } else { // local or param
-                expr.val = expr.symbol.temp;
+                expr.val = symbol.temp;
             }
         }
         else
@@ -298,7 +318,7 @@ public interface TacEmitter extends Visitor<FuncVisitor> {
 
     @Override
     default void visitCall(Tree.Call expr, FuncVisitor mv) {
-        System.out.println(expr.toString()+expr.pos);
+        System.out.println("Call     "+expr.toString()+expr.pos);
         if (expr.isArrayLength) { // special case for array.length()
             var array = expr.receiver.get();
             array.accept(this, mv);
@@ -309,20 +329,28 @@ public interface TacEmitter extends Visitor<FuncVisitor> {
         expr.args.forEach(arg -> arg.accept(this, mv));
         var temps = new ArrayList<Temp>();
         expr.args.forEach(arg -> temps.add(arg.val));
-        if (expr.symbol.isStatic()) {
-            if (expr.symbol.type.returnType.isVoidType()) {
-                mv.visitStaticCall(expr.symbol.owner.name, expr.symbol.name, temps);
+        if(expr.symbol.isMethodSymbol())
+        {
+            var symbol = (MethodSymbol) expr.symbol;
+            if (symbol.isStatic()) {
+                if (symbol.type.returnType.isVoidType()) {
+                    mv.visitStaticCall(symbol.owner.name, expr.symbol.name, temps);
+                } else {
+                    expr.val = mv.visitStaticCall(symbol.owner.name, expr.symbol.name, temps, true);
+                }
             } else {
-                expr.val = mv.visitStaticCall(expr.symbol.owner.name, expr.symbol.name, temps, true);
+                var object = expr.expr;
+                object.accept(this, mv);
+                if (symbol.type.returnType.isVoidType()) {
+                    mv.visitMemberCall(object.val, symbol.owner.name, expr.symbol.name, temps);
+                } else {
+                    expr.val = mv.visitMemberCall(object.val, symbol.owner.name, expr.symbol.name, temps, true);
+                }
             }
-        } else {
+        }
+        else{
             var object = expr.expr;
             object.accept(this, mv);
-            if (expr.symbol.type.returnType.isVoidType()) {
-                mv.visitMemberCall(object.val, expr.symbol.owner.name, expr.symbol.name, temps);
-            } else {
-                expr.val = mv.visitMemberCall(object.val, expr.symbol.owner.name, expr.symbol.name, temps, true);
-            }
         }
     }
 
