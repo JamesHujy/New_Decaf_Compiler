@@ -1187,6 +1187,7 @@ public abstract class Tree {
         public String name;
         // For type check
         public VarSymbol symbol;
+        public MethodSymbol methodSymbol;
         public boolean isClassName = false;
         public boolean isMethod = false;
 

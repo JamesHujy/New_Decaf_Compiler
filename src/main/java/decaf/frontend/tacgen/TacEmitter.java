@@ -43,11 +43,20 @@ public interface TacEmitter extends Visitor<FuncVisitor> {
     @Override
     default void visitLocalVarDef(Tree.LocalVarDef def, FuncVisitor mv) {
         def.symbol.temp = mv.freshTemp();
-        if (def.initVal.isEmpty()) return;
-        var initVal = def.initVal.get();
+        if(def.isVar)
+        {
+            var initVal = def.VarExpr;
+            initVal.accept(this, mv);
+            mv.visitAssign(def.symbol.temp, initVal.val);
+        }
+        else {
+            if (def.initVal.isEmpty()) return;
+            var initVal = def.initVal.get();
 
-        initVal.accept(this, mv);
-        mv.visitAssign(def.symbol.temp, initVal.val);
+            initVal.accept(this, mv);
+            mv.visitAssign(def.symbol.temp, initVal.val);
+        }
+
     }
 
     @Override
@@ -238,12 +247,28 @@ public interface TacEmitter extends Visitor<FuncVisitor> {
 
     @Override
     default void visitVarSel(Tree.VarSel expr, FuncVisitor mv) {
-        if (expr.symbol.isMemberVar()) {
-            var object = expr.receiver.get();
-            object.accept(this, mv);
-            expr.val = mv.visitMemberAccess(object.val, expr.symbol.getOwner().name, expr.name);
-        } else { // local or param
-            expr.val = expr.symbol.temp;
+        System.out.println(expr);
+        if(!expr.isMethod)
+        {
+            if (expr.symbol.isMemberVar()) {
+                var object = expr.receiver.get();
+                object.accept(this, mv);
+                expr.val = mv.visitMemberAccess(object.val, expr.symbol.getOwner().name, expr.name);
+            } else { // local or param
+                expr.val = expr.symbol.temp;
+            }
+        }
+        else
+        {
+            if(expr.receiver.isPresent())
+            {
+                var receiver = expr.receiver.get();
+                receiver.accept(this, mv);
+                expr.val = receiver.val;
+            }
+            else {
+                expr.val = mv.getArgTemp(0);
+            }
         }
     }
 
@@ -291,7 +316,7 @@ public interface TacEmitter extends Visitor<FuncVisitor> {
                 expr.val = mv.visitStaticCall(expr.symbol.owner.name, expr.symbol.name, temps, true);
             }
         } else {
-            var object = expr.receiver.get();
+            var object = expr.expr;
             object.accept(this, mv);
             if (expr.symbol.type.returnType.isVoidType()) {
                 mv.visitMemberCall(object.val, expr.symbol.owner.name, expr.symbol.name, temps);
