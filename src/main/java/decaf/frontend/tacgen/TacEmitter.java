@@ -6,11 +6,9 @@ import decaf.frontend.tree.Tree;
 import decaf.frontend.tree.Visitor;
 import decaf.frontend.type.BuiltInType;
 import decaf.lowlevel.instr.Temp;
+import decaf.lowlevel.label.FuncLabel;
 import decaf.lowlevel.label.Label;
-import decaf.lowlevel.tac.FuncVisitor;
-import decaf.lowlevel.tac.Intrinsic;
-import decaf.lowlevel.tac.RuntimeError;
-import decaf.lowlevel.tac.TacInstr;
+import decaf.lowlevel.tac.*;
 
 import java.util.ArrayList;
 import java.util.Stack;
@@ -267,19 +265,65 @@ public interface TacEmitter extends Visitor<FuncVisitor> {
     @Override
     default void visitVarSel(Tree.VarSel expr, FuncVisitor mv) {
         System.out.println("Varsel    "+expr.toString()+expr.pos);
-        if(!expr.isMethod)
+        System.out.println(expr.symbol);
+        System.out.println(expr.symbol.toString()+expr.isMethod);
+        if(!expr.isCall)
         {
-            var symbol = ((VarSymbol)expr.symbol);
-            if (symbol.isMemberVar()) {
-                var object = expr.receiver.get();
-                object.accept(this, mv);
-                expr.val = mv.visitMemberAccess(object.val, symbol.getOwner().name, expr.name);
-            } else { // local or param
-                expr.val = symbol.temp;
+            if(!expr.isMethod)
+            {
+                var symbol = ((VarSymbol)expr.symbol);
+                if (symbol.isMemberVar()) {
+                    var object = expr.receiver.get();
+                    object.accept(this, mv);
+                    expr.val = mv.visitMemberAccess(object.val, symbol.getOwner().name, expr.name);
+                } else { // local or param
+                    expr.val = symbol.temp;
+                }
+            }
+            else {
+                var className = ((MethodSymbol)expr.symbol).owner.name;
+                var methodName = expr.name;
+                var funcname = className+"_"+methodName+"_"+expr.pos;
+                var entry = new FuncLabel("_general_table", funcname);
+                var symbol = ((MethodSymbol)expr.symbol);
+
+                if(!mv.judgeContain(entry))
+                {
+                    mv.putObjectFuncLabel(entry);
+                    var newFunc = new FuncVisitor(entry, symbol.type.argTypes.size(), mv.ctx);
+                    newFunc.putFuncLabel(entry);
+                    if(symbol.isStatic())
+                    {
+                        ArrayList<Temp> tempList = new ArrayList<>();
+                        for(int i = 0;i < symbol.type.argTypes.size();i++)
+                            tempList.add(newFunc.getArgTemp(i));
+                        if(symbol.type.returnType.isVoidType())
+                        {
+                            newFunc.visitStaticCall(className, methodName, tempList);
+                            newFunc.visitReturn();
+                        }
+                        else {
+                            var returnTemp = newFunc.visitStaticCall(className, methodName, tempList, true);
+                            newFunc.visitReturn(returnTemp);
+                        }
+                    }
+                    System.out.println("mvs");
+                    mv.shoeFuns();
+                    System.out.println("newFuncs");
+                    newFunc.shoeFuns();
+
+                }
+                var vtable = mv.visitLoadVTable("_general_table_");
+                int offset = mv.getOffset("_general_table_", funcname);
+                var funcPointer = mv.visitLoadFrom(vtable, offset);
+
+                var memory = mv.visitIntrinsicCall(Intrinsic.ALLOCATE, true, mv.visitLoad(4));
+                mv.visitStoreTo(memory, funcPointer);
+
+                expr.val = memory;
             }
         }
-        else
-        {
+        else{
             if(expr.receiver.isPresent())
             {
                 var receiver = expr.receiver.get();
@@ -287,7 +331,8 @@ public interface TacEmitter extends Visitor<FuncVisitor> {
                 expr.val = receiver.val;
             }
             else {
-                expr.val = mv.getArgTemp(0);
+                var symbol = (MethodSymbol) expr.symbol;
+
             }
         }
     }
@@ -319,6 +364,7 @@ public interface TacEmitter extends Visitor<FuncVisitor> {
     @Override
     default void visitCall(Tree.Call expr, FuncVisitor mv) {
         System.out.println("Call     "+expr.toString()+expr.pos);
+        System.out.println(expr.symbol);
         if (expr.isArrayLength) { // special case for array.length()
             var array = expr.receiver.get();
             array.accept(this, mv);
@@ -329,6 +375,7 @@ public interface TacEmitter extends Visitor<FuncVisitor> {
         expr.args.forEach(arg -> arg.accept(this, mv));
         var temps = new ArrayList<Temp>();
         expr.args.forEach(arg -> temps.add(arg.val));
+        System.out.println(expr.symbol);
         if(expr.symbol.isMethodSymbol())
         {
             var symbol = (MethodSymbol) expr.symbol;

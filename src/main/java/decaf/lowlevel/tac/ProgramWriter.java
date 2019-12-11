@@ -33,6 +33,10 @@ public class ProgramWriter {
             }
         }
 
+        ctx.generalVtable = new VTable("_general_table_", Optional.empty());
+        ctx.putVTable(ctx.generalVtable);
+        ctx.putOffsets(ctx.generalVtable);
+
         // Build virtual tables.
         for (var clazz : classes.values()) {
             buildVTableFor(clazz);
@@ -75,7 +79,7 @@ public class ProgramWriter {
 
     private HashMap<String, ClassInfo> classes = new HashMap<>();
 
-    private Context ctx = new Context();
+    public Context ctx = new Context();
 
     /**
      * Emit code for initializing a new object. In memory, an object takes 4 * (1 + number of member variables) bytes,
@@ -206,9 +210,22 @@ public class ProgramWriter {
             }
         }
 
+        public void pubFuncObject(FuncLabel entry){
+            generalVtable.memberMethods.add(entry);
+            ctx.putOffsets(generalVtable);
+            ctx.putVTable(generalVtable);
+        }
+
+        public boolean judgeContrain(FuncLabel entry)
+        {
+            return generalVtable.judgeContain(entry);
+        }
+
         private Map<String, FuncLabel> labels = new TreeMap<>();
 
         private Map<String, VTable> vtables = new TreeMap<>();
+
+        public VTable generalVtable;
 
         private Map<String, Integer> offsets = new TreeMap<>();
 

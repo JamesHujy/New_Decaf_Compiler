@@ -59,6 +59,11 @@ public class VTable {
         return 4 + 4 * memberVariables.size();
     }
 
+    public boolean judgeContain(FuncLabel funcLabel)
+    {
+        return memberMethods.contains(funcLabel);
+    }
+
     public void printTo(PrintWriter pw) {
         pw.println(label.prettyString() + ":");
         if (parent.isPresent()) {

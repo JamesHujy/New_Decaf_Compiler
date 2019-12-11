@@ -4,7 +4,6 @@ import decaf.driver.Config;
 import decaf.driver.Phase;
 import decaf.frontend.tree.Tree;
 import decaf.lowlevel.tac.*;
-
 import java.io.FileNotFoundException;
 import java.io.PrintWriter;
 import java.util.ArrayList;
@@ -56,7 +55,6 @@ public class TacGen extends Phase<Tree.TopLevel, TacProg> implements TacEmitter 
                 mv.visitEnd();
             }
         }
-
         return pw.visitEnd();
     }
 

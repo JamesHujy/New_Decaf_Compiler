@@ -540,6 +540,7 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         if(expr.expr instanceof Tree.VarSel)
         {
             varsel = (Tree.VarSel) expr.expr;
+            varsel.isCall = true;
             var name = ((Tree.VarSel) expr.expr).name;
             if(ctx.judgeContain(name))
             {
@@ -718,7 +719,6 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         if (symbol.isPresent()) {
             if (symbol.get().isMethodSymbol()) {
                 var method = (MethodSymbol) symbol.get();
-                call.symbol = method;
                 call.symbol = method;
                 ((Tree.VarSel) call.expr).symbol = method;
                 ((Tree.VarSel) call.expr).isMethod = true;

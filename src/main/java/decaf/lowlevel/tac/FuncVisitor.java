@@ -413,7 +413,7 @@ public class FuncVisitor {
         return nextTempId;
     }
 
-    FuncVisitor(FuncLabel entry, int numArgs, ProgramWriter.Context ctx) {
+    public FuncVisitor(FuncLabel entry, int numArgs, ProgramWriter.Context ctx) {
         this.ctx = ctx;
         func = new TacFunc(entry, numArgs);
         visitLabel(entry);
@@ -421,11 +421,38 @@ public class FuncVisitor {
         for (int i = 0; i < numArgs; i++) {
             argsTemps[i] = freshTemp();
         }
+        ctx.funcs.add(func);
     }
 
+    public void putFuncLabel(FuncLabel label)
+    {
+        ctx.putFuncLabel(label.clazz, label.method);
+    }
+
+    public void putObjectFuncLabel(FuncLabel entry){
+        ctx.pubFuncObject(entry);
+    }
+
+    public boolean judgeContain(FuncLabel entry)
+    {
+        return ctx.judgeContrain(entry);
+    }
+
+    public int getOffset(String clazz, String name)
+    {
+        return ctx.getOffset(clazz, name);
+    }
+
+    public void shoeFuns()
+    {
+        for(var funs:ctx.funcs)
+        {
+            System.out.println(funs.entry);
+        }
+    }
     private TacFunc func;
 
-    private ProgramWriter.Context ctx;
+    public ProgramWriter.Context ctx;
 
     private int nextTempId = 0;
 
