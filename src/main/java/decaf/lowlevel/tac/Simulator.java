@@ -115,7 +115,7 @@ public final class Simulator {
             if (_halt) {
                 return;
             }
-
+            System.out.println(_instrs.get(_pc));
             _instrs.get(_pc).accept(executor);
             count++;
         }
@@ -209,7 +209,8 @@ public final class Simulator {
 
         Frame(Label entry, int arraySize) {
             this.entry = entry;
-            this.array = new int[arraySize];
+            int arraySize1 = arraySize;
+            this.array = new int[arraySize1];
             var i = 0;
             for (var arg : _actual_args) { // copy actual arguments
                 this.array[i] = arg;
@@ -483,7 +484,6 @@ public final class Simulator {
             if (base % 4 != 0) {
                 throw new Error("Base address not aligned: " + base);
             }
-
             if (offset % 4 != 0) {
                 throw new Error("Offset not aligned: " + base);
             }

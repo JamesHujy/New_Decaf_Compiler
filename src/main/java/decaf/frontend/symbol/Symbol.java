@@ -24,6 +24,8 @@ public abstract class Symbol implements Comparable<Symbol> {
 
     public final Pos pos;
 
+    public boolean isStatic;
+
     Symbol(String name, Type type, Pos pos) {
         this.name = name;
         this.type = type;

@@ -199,21 +199,11 @@ public class FuncVisitor {
      * @return the fresh temp if we need return (or else null)
      */
     public Temp visitMemberCall(Temp object, String clazz, String method, List<Temp> args, boolean needReturn) {
-        Temp temp = null;
         var vtbl = visitLoadFrom(object);
         var entry = visitLoadFrom(vtbl, ctx.getOffset(clazz, method));
 
         func.add(new TacInstr.Parm(object));
-        for (var arg : args) {
-            func.add(new TacInstr.Parm(arg));
-        }
-        if (needReturn) {
-            temp = freshTemp();
-            func.add(new TacInstr.IndirectCall(temp, entry));
-        } else {
-            func.add(new TacInstr.IndirectCall(entry));
-        }
-        return temp;
+        return visitIndirectCall(entry, args, needReturn);
     }
 
     /**
@@ -223,6 +213,25 @@ public class FuncVisitor {
         visitMemberCall(object, clazz, method, args, false);
     }
 
+    public Temp visitIndirectCall(Temp pointer, List<Temp> args, boolean needReturn){
+        for(var arg: args)
+        {
+            func.add(new TacInstr.Parm(arg));
+        }
+        Temp temp = null;
+        if (needReturn) {
+            temp = freshTemp();
+            func.add(new TacInstr.IndirectCall(temp, pointer));
+        } else {
+            func.add(new TacInstr.IndirectCall(pointer));
+        }
+        return temp;
+    }
+
+    public void addParam(Temp temp)
+    {
+        func.add(new TacInstr.Parm(temp));
+    }
     /**
      * Append instructions to invoke a static method.
      *
@@ -421,7 +430,8 @@ public class FuncVisitor {
         for (int i = 0; i < numArgs; i++) {
             argsTemps[i] = freshTemp();
         }
-        ctx.funcs.add(func);
+        if(entry.clazz.equals("_general_table_"))
+            ctx.funcs.add(func);
     }
 
     public void putFuncLabel(FuncLabel label)

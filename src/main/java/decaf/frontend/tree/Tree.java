@@ -521,8 +521,10 @@ public abstract class Tree {
         public TypeLit typeLit;
         public Id id;
         public Pos assignPos;
+
         public Optional<Expr> initVal;
         public Expr VarExpr;
+
         // For convenience
         public String name;
         // For type check

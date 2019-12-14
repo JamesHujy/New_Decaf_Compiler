@@ -407,6 +407,7 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                     var method = (MethodSymbol) symbol.get();
                     expr.type = method.type;
                     expr.symbol = method;
+
                     if(!method.isStatic() && ctx.currentMethod().isStatic())
                     {
                         issue(new RefNonStaticError(expr.pos, ctx.currentMethod().name, expr.name));
@@ -581,7 +582,6 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                         if(v1.symbol.type.isClassType())
                         {
                             var classname = ((ClassType)v1.symbol.type).name;
-
                             typeCall(expr, false, classname, ctx, false);
                         }
                     }
@@ -669,6 +669,7 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         else if(expr.expr instanceof Tree.Call)
         {
             expr.expr.accept(this, ctx);
+            expr.symbol = ((Tree.Call) expr.expr).symbol;
             if(!expr.expr.type.noError())
                 return;
             var args = expr.args;
@@ -714,6 +715,7 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         var varSel = (Tree.VarSel) call.expr;
         String methodName = varSel.name;
         var symbol = clazz.scope.lookup(methodName);
+
         var localSymbol = ctx.lookupBefore(methodName, call.pos);
 
         if (symbol.isPresent()) {
@@ -722,8 +724,7 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                 call.symbol = method;
                 ((Tree.VarSel) call.expr).symbol = method;
                 ((Tree.VarSel) call.expr).isMethod = true;
-                call.symbol.setDomain(clazz.scope);
-                //((Tree.VarSel) call.expr).methodSymbol.setDomain(ctx.currentScope());
+
                 call.type = method.type.returnType;
                 if (requireStatic && !method.isStatic()) {
                     issue(new NotClassFieldError(call.expr.pos, methodName, clazz.type.toString()));
@@ -759,13 +760,14 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             }
             else if(symbol.get().type.isFuncType())
             {
+
                 var functype = (FunType) symbol.get().type;
                 var symbolGet = symbol.get();
                 call.type = functype.returnType;
                 call.symbol = symbol.get();
-                //call.symbol.setDomain(ctx.currentScope());
-                ((Tree.VarSel) call.expr).symbol = new VarSymbol(((Tree.VarSel) call.expr).name, symbolGet.type, symbolGet.pos);
-                ((Tree.VarSel) call.expr).symbol.setDomain(ctx.currentScope());
+
+                ((Tree.VarSel) call.expr).symbol = symbol.get();
+
                 // typing args
                 var args = call.args;
                 for (var arg : args) {
@@ -800,8 +802,12 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                 var localSymbolType = (FunType)localSymbolGet.type;
                 call.type = localSymbolType.returnType;
                 call.symbol = localSymbolGet;
-                //((Tree.VarSel) call.expr).symbol = new VarSymbol(((Tree.VarSel) call.expr).name, localSymbolGet.type, localSymbolGet.pos);
-                //((Tree.VarSel) call.expr).symbol.setDomain(ctx.currentScope());
+                ((Tree.VarSel) call.expr).symbol = localSymbolGet;
+                if(localSymbolGet.isMethodSymbol())
+                {
+                    if(((MethodSymbol)localSymbolGet).isStatic())
+                        ((Tree.VarSel) call.expr).symbol.isStatic = true;
+                }
                 // typing args
                 var args = call.args;
                 for (var arg : args) {
@@ -912,6 +918,7 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
 
             stmt.symbol.type = initVal.type;
         }
+
     }
 
     public Type getSuperior(List<Type> typeList)
