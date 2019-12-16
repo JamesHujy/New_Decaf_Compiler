@@ -95,6 +95,9 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         stmt.rhs.accept(this, ctx);
         var lt = stmt.lhs.type;
         var rt = stmt.rhs.type;
+
+        stmt.lhs.symbol = stmt.rhs.symbol;
+
         if(ctx.judgeLambda())
         {
             if(stmt.lhs instanceof Tree.VarSel && !((Tree.VarSel)stmt.lhs).receiver.isPresent())
@@ -120,6 +123,7 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         if (lt.noError() && (!rt.subtypeOf(lt))) {
             issue(new IncompatBinOpError(stmt.pos, lt.toString(), "=", rt.toString()));
         }
+
     }
 
     @Override
@@ -556,8 +560,12 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                 allowClassNameVar = false;
                 if(!receiver.type.noError())
                     return;
-
-                if (receiver instanceof Tree.VarSel) {
+                System.out.println(receiver);
+                if(receiver instanceof  Tree.This)
+                {
+                    typeCall(expr, true, ctx.currentClass().name, ctx,false);
+                }
+                else if (receiver instanceof Tree.VarSel) {
                     var v1 = (Tree.VarSel) receiver;
                     if (v1.isClassName) {
                         // Special case: invoking a staStic method, like MyClass.foo()
@@ -639,7 +647,6 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                 typeCall(expr, true, "", ctx, false);
             }
         }
-
         else if(expr.expr instanceof Tree.Lambda)
         {
             lambda = (Tree.Lambda) expr.expr;
@@ -647,9 +654,9 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             var returntype = ((FunType) lambda.type).returnType;
             expr.type = returntype;
             expr.symbol = lambda.symbol;
-            if(expr.args.size() != lambda.symbol.argTypes.size())
-                issue(new BadCountArgLambdaError(expr.pos, lambda.symbol.argTypes.size(), expr.args.size()));
-            var iter1 = lambda.symbol.argTypes.iterator();
+            if(expr.args.size() != lambda.lambdaSymbol.argTypes.size())
+                issue(new BadCountArgLambdaError(expr.pos, lambda.lambdaSymbol.argTypes.size(), expr.args.size()));
+            var iter1 = lambda.lambdaSymbol.argTypes.iterator();
 
             var args = expr.args;
             for (var arg : args) {
@@ -760,7 +767,6 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             }
             else if(symbol.get().type.isFuncType())
             {
-
                 var functype = (FunType) symbol.get().type;
                 var symbolGet = symbol.get();
                 call.type = functype.returnType;
@@ -1111,13 +1117,13 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         if(lambda.isBlock)
         {
             lambda.body.accept(this,ctx);
-            if(lambda.symbol.returnTypeList.size() == 0) {
-                lambda.symbol.setReturnType(BuiltInType.VOID);
-                lambda.type = lambda.symbol.type;
+            if(lambda.lambdaSymbol.returnTypeList.size() == 0) {
+                lambda.lambdaSymbol.setReturnType(BuiltInType.VOID);
+                lambda.type = lambda.lambdaSymbol.type;
             }
             else {
                 boolean reported = false;
-                for(var type:lambda.symbol.returnTypeList)
+                for(var type:lambda.lambdaSymbol.returnTypeList)
                 {
                     if(!type.isVoidType() && !lambda.body.returns && !reported)
                     {
@@ -1125,11 +1131,11 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                         reported = true;
                     }
                 }
-                var returnType = getSuperior(lambda.symbol.returnTypeList);
+                var returnType = getSuperior(lambda.lambdaSymbol.returnTypeList);
                 if(returnType.noError())
                 {
-                    lambda.symbol.setReturnType(returnType);
-                    lambda.type = lambda.symbol.type;
+                    lambda.lambdaSymbol.setReturnType(returnType);
+                    lambda.type = lambda.lambdaSymbol.type;
                 }
                 else
                     issue(new IncompatibleReturnError(lambda.body.pos));
@@ -1138,10 +1144,11 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         else
         {
             lambda.expr.accept(this, ctx);
-            lambda.symbol.setReturnType(lambda.expr.type);
-            lambda.type = lambda.symbol.type;
+            lambda.lambdaSymbol.setReturnType(lambda.expr.type);
+            lambda.type = lambda.lambdaSymbol.type;
         }
         ctx.close();
+        lambda.symbol = lambda.lambdaSymbol;
     }
     // Only usage: check if an initializer cyclically refers to the declared variable, e.g. var x = x + 1
     private Optional<Pos> localVarDefPos = Optional.empty();

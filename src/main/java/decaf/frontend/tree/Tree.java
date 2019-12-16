@@ -1000,7 +1000,7 @@ public abstract class Tree {
         public boolean isBlock;
 
         public LambdaScope scope;
-        public LambdaSymbol symbol;
+        public LambdaSymbol lambdaSymbol;
 
         public Lambda(List<LocalVarDef> params, Block body, Pos pos)
         {

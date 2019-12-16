@@ -206,6 +206,13 @@ public class FuncVisitor {
         return visitIndirectCall(entry, args, needReturn);
     }
 
+    public Temp visitMemberObject(Temp object, String clazz, String method, List<Temp> args, boolean needReturn)
+    {
+        var vtbl = visitLoadFrom(object);
+        var entry = visitLoadFrom(vtbl, ctx.getOffset(clazz, method));
+        return visitIndirectCall(entry, args, needReturn);
+    }
+
     /**
      * @see #visitMemberCall(Temp, String, String, List, boolean)
      */
@@ -430,8 +437,6 @@ public class FuncVisitor {
         for (int i = 0; i < numArgs; i++) {
             argsTemps[i] = freshTemp();
         }
-        if(entry.clazz.equals("_general_table_"))
-            ctx.funcs.add(func);
     }
 
     public void putFuncLabel(FuncLabel label)
@@ -460,7 +465,7 @@ public class FuncVisitor {
             System.out.println(funs.entry);
         }
     }
-    private TacFunc func;
+    public TacFunc func;
 
     public ProgramWriter.Context ctx;
 
