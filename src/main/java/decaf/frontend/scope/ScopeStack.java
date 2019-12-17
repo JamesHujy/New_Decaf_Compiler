@@ -105,17 +105,17 @@ public class ScopeStack {
      * Otherwise, only pop the current scope.
      */
     public void close() {
+
         assert !scopeStack.isEmpty();
         Scope scope = scopeStack.pop();
         if(scope.isLambdaScope())
         {
-            var lambdascope = lambdaScopeStack.peek().getOwner();
-            lambdaScopeStack.pop();
+            var lambdaSymbol = lambdaScopeStack.pop().getOwner();
             if(!lambdaScopeStack.empty())
             {
-                var tempTop = lambdaScopeStack.peek();
-                lambdaScopeStack.pop();
-                for(var captured: tempTop.getOwner().catchedSymbol)
+                var tempTop = lambdaScopeStack.pop();
+                System.out.println(tempTop.getOwner());
+                for(var captured: lambdaSymbol.catchedSymbol)
                 {
                     if(captured instanceof Tree.This)
                         tempTop.getOwner().catchedSymbol.add(captured);

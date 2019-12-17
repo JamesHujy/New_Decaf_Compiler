@@ -415,7 +415,6 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                         {
                             if(!currentLambda.catchedSymbol.contains(var))
                             {
-                                System.out.println("captured var"+var);
                                 currentLambda.catchedSymbol.add(var);
                             }
                         }
@@ -1179,8 +1178,9 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             lambda.lambdaSymbol.setReturnType(lambda.expr.type);
             lambda.type = lambda.lambdaSymbol.type;
         }
-        ctx.close();
         lambda.symbol = lambda.lambdaSymbol;
+        ctx.close();
+
     }
     // Only usage: check if an initializer cyclically refers to the declared variable, e.g. var x = x + 1
     private Optional<Pos> localVarDefPos = Optional.empty();

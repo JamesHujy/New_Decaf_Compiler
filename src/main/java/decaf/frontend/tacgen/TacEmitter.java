@@ -77,8 +77,6 @@ public interface TacEmitter extends Visitor<FuncVisitor> {
                 var object = v.receiver.get();
                 object.accept(this, mv);
                 assign.rhs.accept(this, mv);
-                System.out.println(assign.rhs.val);
-                System.out.println(object.val);
                 mv.visitMemberWrite(object.val, symbol.getOwner().name, v.name, assign.rhs.val);
             } else { // local or param
                 assign.rhs.accept(this, mv);
@@ -518,11 +516,12 @@ public interface TacEmitter extends Visitor<FuncVisitor> {
 
     @Override
     default void visitLambda(Tree.Lambda expr, FuncVisitor mv) {
-        System.out.println(expr);
-        mv.setLambdaSymbol(expr.lambdaSymbol);
 
+        mv.setLambdaSymbol(expr.lambdaSymbol);
+        System.out.println(expr.symbol);
         for(var item:((LambdaSymbol)expr.symbol).catchedSymbol)
             System.out.println(item);
+        System.out.println("showend");
         var funcname = "lambda@"+expr.pos;
         var entry = new FuncLabel("_general_table_", funcname);
         var symbol = expr.lambdaSymbol;
@@ -541,7 +540,6 @@ public interface TacEmitter extends Visitor<FuncVisitor> {
                     ((Tree.This) param).val = newFunc.getArgTemp(0);
                     hasThis = true;
                 }
-
             }
             int i = 0;
             if(hasThis)
@@ -570,7 +568,6 @@ public interface TacEmitter extends Visitor<FuncVisitor> {
             }
             newFunc.setLambdaSymbol(null);
             newFunc.visitEnd();
-            System.out.println("newFunc end");
 
         }
         expr.val = mv.visitCurrentLambda(funcname, symbol);

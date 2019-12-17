@@ -466,13 +466,12 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             argsTypes.add(paras.typeLit.type);
         }
         lambda.lambdaSymbol = new LambdaSymbol(BuiltInType.NULL, argsTypes, (LambdaScope) ctx.currentScope(), lambda.pos);
-        ctx.close();
+
 
         lambda.type = lambda.lambdaSymbol.type;
         ctx.declare(lambda.lambdaSymbol);
         lambda.scope.setOwner(lambda.lambdaSymbol);
 
-        ctx.open(lambda.scope);
         if(lambda.isBlock)
         {
             lambda.body.accept(this,ctx);
