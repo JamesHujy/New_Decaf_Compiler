@@ -1,9 +1,6 @@
 package decaf.frontend.scope;
 
-import decaf.frontend.symbol.ClassSymbol;
-import decaf.frontend.symbol.LambdaSymbol;
-import decaf.frontend.symbol.MethodSymbol;
-import decaf.frontend.symbol.Symbol;
+import decaf.frontend.symbol.*;
 import decaf.frontend.tree.Pos;
 import decaf.frontend.tree.Tree;
 
@@ -112,7 +109,27 @@ public class ScopeStack {
         Scope scope = scopeStack.pop();
         if(scope.isLambdaScope())
         {
+            var lambdascope = lambdaScopeStack.peek().getOwner();
             lambdaScopeStack.pop();
+            if(!lambdaScopeStack.empty())
+            {
+                var tempTop = lambdaScopeStack.peek();
+                lambdaScopeStack.pop();
+                for(var captured: tempTop.getOwner().catchedSymbol)
+                {
+                    if(captured instanceof Tree.This)
+                        tempTop.getOwner().catchedSymbol.add(captured);
+                    else{
+                        var defineIn = ((VarSymbol)captured).domain();
+                        while(defineIn.isLocalScope())
+                            defineIn = ((LocalScope)defineIn).getParentScope();
+                        if(defineIn != tempTop)
+                            if(!tempTop.getOwner().catchedSymbol.contains(captured))
+                                tempTop.getOwner().catchedSymbol.add(captured);
+                    }
+                }
+                lambdaScopeStack.push(tempTop);
+            }
         }
 
         if (scope.isClassScope()) {

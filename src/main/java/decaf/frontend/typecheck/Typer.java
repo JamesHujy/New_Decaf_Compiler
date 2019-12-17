@@ -123,7 +123,6 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         if (lt.noError() && (!rt.subtypeOf(lt))) {
             issue(new IncompatBinOpError(stmt.pos, lt.toString(), "=", rt.toString()));
         }
-
     }
 
     @Override
@@ -394,6 +393,31 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                             issue(new RefNonStaticError(expr.pos, ctx.currentMethod().name, expr.name));
                         } else {
                             expr.setThis();
+                            if (ctx.judgeLambda())
+                            {
+                                var varScope = var.domain();
+                                var currentLambda = ctx.currentLambda();
+                                var lambdaScope = currentLambda.scope;
+                                var localScope = lambdaScope.nestedLocalScope();
+                                if(varScope != localScope && varScope != lambdaScope)
+                                    currentLambda.catchedSymbol.add(var);
+                            }
+                        }
+                    }
+                    else if(ctx.judgeLambda())
+                    {
+                        var varScope = var.domain();
+                        var currentLambda = ctx.currentLambda();
+                        var lambdaScope = currentLambda.scope;
+                        while(varScope.isLocalScope())
+                            varScope = ((LocalScope)varScope).getParentScope();
+                        if(varScope != lambdaScope)
+                        {
+                            if(!currentLambda.catchedSymbol.contains(var))
+                            {
+                                System.out.println("captured var"+var);
+                                currentLambda.catchedSymbol.add(var);
+                            }
                         }
                     }
                     return;
@@ -416,8 +440,9 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                     {
                         issue(new RefNonStaticError(expr.pos, ctx.currentMethod().name, expr.name));
                     }
-                    else
-                        expr.isMethod = true;
+                    else expr.isMethod = true;
+                    if(ctx.judgeLambda() && !method.isStatic())
+                        ctx.currentLambda().catchedSymbol.add(method);
                     return;
                 }
             }
@@ -433,6 +458,12 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         allowClassNameVar = false;
         var rt = receiver.type;
         expr.type = BuiltInType.ERROR;
+
+        if(receiver instanceof  Tree.This){
+            if(ctx.judgeLambda()){
+                ctx.currentLambda().catchedSymbol.add(0, receiver);
+            }
+        }
 
         if(receiver instanceof Tree.VarSel)
         {
@@ -539,12 +570,13 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
     @Override
     public void visitCall(Tree.Call expr, ScopeStack ctx) {
         expr.type = BuiltInType.ERROR;
-        Type rt;
+        
         Tree.VarSel varsel;
         Tree.Lambda lambda;
         if(expr.expr instanceof Tree.VarSel)
         {
             varsel = (Tree.VarSel) expr.expr;
+            varsel.accept(this, ctx);
             varsel.isCall = true;
             var name = ((Tree.VarSel) expr.expr).name;
             if(ctx.judgeContain(name))
@@ -560,7 +592,7 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                 allowClassNameVar = false;
                 if(!receiver.type.noError())
                     return;
-                System.out.println(receiver);
+
                 if(receiver instanceof  Tree.This)
                 {
                     typeCall(expr, true, ctx.currentClass().name, ctx,false);
@@ -931,19 +963,19 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
     {
         if(typeList.size()==0)
             return BuiltInType.VOID;
-        var condidate = typeList.get(0);
-        if(condidate.isBaseType() || condidate.isVoidType() || condidate.isArrayType())
+        var candidate = typeList.get(0);
+        if(candidate.isBaseType() || candidate.isVoidType() || candidate.isArrayType())
         {
             for(var type:typeList)
             {
-                if(!type.eq(condidate))
+                if(!type.eq(candidate))
                     return BuiltInType.ERROR;
             }
-            return condidate;
+            return candidate;
         }
-        else if (condidate.isClassType())
+        else if (candidate.isClassType())
         {
-            var classType = (ClassType) condidate;
+            var classType = (ClassType) candidate;
             while(true){
                 boolean hasError = false;
                 for(var type:typeList)
@@ -964,9 +996,9 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                 else return classType;
             }
         }
-        else if(condidate.isFuncType())
+        else if(candidate.isFuncType())
         {
-            var functype = (FunType) condidate;
+            var functype = (FunType) candidate;
             ArrayList<ArrayList<Type>> typeListList = new ArrayList<>();
             ArrayList<Type> returnTypeList = new ArrayList<>();
             for(var type:typeList)
@@ -1015,7 +1047,7 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             else
                 return BuiltInType.ERROR;
         }
-        else if(condidate.eq(BuiltInType.NULL))
+        else if(candidate.eq(BuiltInType.NULL))
         {
             if(typeList.size() == 1)
                 return BuiltInType.NULL;
@@ -1025,22 +1057,22 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                 return getSuperior(typeList);
             }
         }
-        return condidate;
+        return candidate;
     }
 
     public Type getInferior(List<Type> typeList)
     {
-        var condidate = typeList.get(0);
-        if(condidate.isBaseType() || condidate.isVoidType() || condidate.isArrayType())
+        var candidate = typeList.get(0);
+        if(candidate.isBaseType() || candidate.isVoidType() || candidate.isArrayType())
         {
             for(var type:typeList)
             {
-                if(!type.eq(condidate))
+                if(!type.eq(candidate))
                     return BuiltInType.ERROR;
             }
-            return condidate;
+            return candidate;
         }
-        else if (condidate.isClassType())
+        else if (candidate.isClassType())
         {
             for(var type:typeList)
             {
@@ -1059,9 +1091,9 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             }
             return BuiltInType.ERROR;
         }
-        else if(condidate.isFuncType())
+        else if(candidate.isFuncType())
         {
-            var functype = (FunType) condidate;
+            var functype = (FunType) candidate;
             ArrayList<ArrayList<Type>> typeListList = new ArrayList<>();
             ArrayList<Type> returnTypeList = new ArrayList<>();
             for(var type:typeList)
@@ -1106,9 +1138,9 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             else
                 return BuiltInType.ERROR;
         }
-        else if(condidate.eq(BuiltInType.NULL))
+        else if(candidate.eq(BuiltInType.NULL))
             return BuiltInType.NULL;
-        return condidate;
+        return candidate;
     }
 
     @Override

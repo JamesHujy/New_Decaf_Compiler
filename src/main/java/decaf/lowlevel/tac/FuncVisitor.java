@@ -1,9 +1,13 @@
 package decaf.lowlevel.tac;
 
+import decaf.frontend.symbol.LambdaSymbol;
+import decaf.frontend.symbol.VarSymbol;
+import decaf.frontend.tree.Tree;
 import decaf.lowlevel.instr.Temp;
 import decaf.lowlevel.label.FuncLabel;
 import decaf.lowlevel.label.Label;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -235,6 +239,34 @@ public class FuncVisitor {
         return temp;
     }
 
+    public Temp visitCapture(VarSymbol varSymbol)
+    {
+        if(currentSymbol == null)
+            return varSymbol.temp;
+        int i = 0;
+        for(var currentVar: currentSymbol.catchedSymbol){
+            if(varSymbol == currentVar)
+                return visitLoadFrom(getArgTemp(0), (i + 2)*4);
+            else
+                i++;
+        }
+        return varSymbol.temp;
+    }
+
+    public Temp visitThis()
+    {
+        if(currentSymbol == null)
+            return getArgTemp(0);
+        int i = 0;
+        for(var symbol:currentSymbol.catchedSymbol){
+            if(symbol instanceof Tree.This)
+                return visitLoadFrom(getArgTemp(0), 4 * (i+2));
+            else
+                i++;
+        }
+        return getArgTemp(0);
+
+    }
     public void addParam(Temp temp)
     {
         func.add(new TacInstr.Parm(temp));
@@ -248,6 +280,7 @@ public class FuncVisitor {
      * @param needReturn do we need a fresh temp to store the return value? (default false)
      * @return the fresh temp if we need return (or else null)
      */
+
     public Temp visitStaticCall(String clazz, String method, List<Temp> args, boolean needReturn) {
         Temp temp = null;
         var entry = ctx.getFuncLabel(clazz, method);
@@ -375,6 +408,29 @@ public class FuncVisitor {
         func.add(instr);
     }
 
+    public Temp visitCurrentLambda(String funcname, LambdaSymbol lambdasymbol)
+    {
+        var vtable = visitLoadVTable("_general_table_");
+        int offset = getOffset("_general_table_", funcname);
+        var funcPointer = visitLoadFrom(vtable, offset);
+
+        int space = 4 * (lambdasymbol.catchedSymbol.size() + 3);
+        var memory = visitIntrinsicCall(Intrinsic.ALLOCATE, true, visitLoad(space));
+        visitStoreTo(memory, visitLoad(2));
+        visitStoreTo(memory, 4, funcPointer);
+        visitStoreTo(memory, 8, visitLoad(lambdasymbol.catchedSymbol.size()));
+        int i = 0;
+        for(var symbol:lambdasymbol.catchedSymbol)
+        {
+            if(symbol instanceof Tree.This)
+                visitStoreTo(memory, 12+i*4, ((Tree.This) symbol).val);
+            else
+                visitStoreTo(memory, 12+i*4, ((VarSymbol)symbol).temp);
+            i++;
+        }
+        return memory;
+    }
+
     /**
      * Call this when all instructions in this function are done.
      */
@@ -465,6 +521,13 @@ public class FuncVisitor {
             System.out.println(funs.entry);
         }
     }
+
+    public void setLambdaSymbol(LambdaSymbol lambdaSymbol)
+    {
+        this.currentSymbol = lambdaSymbol;
+    }
+
+
     public TacFunc func;
 
     public ProgramWriter.Context ctx;
@@ -472,4 +535,6 @@ public class FuncVisitor {
     private int nextTempId = 0;
 
     private Temp[] argsTemps;
+
+    private LambdaSymbol currentSymbol;
 }

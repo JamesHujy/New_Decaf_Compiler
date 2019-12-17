@@ -44,10 +44,7 @@ public interface TacEmitter extends Visitor<FuncVisitor> {
 
     @Override
     default void visitLocalVarDef(Tree.LocalVarDef def, FuncVisitor mv) {
-
         def.symbol.temp = mv.freshTemp();
-
-
         if(def.isVar)
         {
             var initVal = def.VarExpr;
@@ -282,7 +279,7 @@ public interface TacEmitter extends Visitor<FuncVisitor> {
                     object.accept(this, mv);
                     expr.val = mv.visitMemberAccess(object.val, symbol.getOwner().name, expr.name);
                 } else { // local or param
-                    expr.val = symbol.temp;
+                    expr.val = ((VarSymbol) expr.symbol).temp;
                 }
             }
             else {
@@ -318,7 +315,7 @@ public interface TacEmitter extends Visitor<FuncVisitor> {
                         var newFunc = new FuncVisitor(entry, symbol.type.argTypes.size()+1, mv.ctx);
                         newFunc.putFuncLabel(entry);
                         ArrayList<Temp> tempList = new ArrayList<>();
-                        System.out.println(funcname+symbol.type.argTypes.size());
+
                         for(int i = 0;i < symbol.type.argTypes.size()+1;i++)
                             tempList.add(newFunc.getArgTemp(i));
                         if(symbol.type.isVoidType())
@@ -387,8 +384,7 @@ public interface TacEmitter extends Visitor<FuncVisitor> {
                     expr.val = mv.getArgTemp(0);
                 }
                 else if(expr.symbol.isVarSymbol()){
-
-                    expr.val = ((VarSymbol)expr.symbol).temp;
+                    expr.val = ((VarSymbol) expr.symbol).temp;
                 }
             }
         }
@@ -415,7 +411,7 @@ public interface TacEmitter extends Visitor<FuncVisitor> {
 
     @Override
     default void visitThis(Tree.This expr, FuncVisitor mv) {
-        expr.val = mv.getArgTemp(0);
+        expr.val = mv.visitThis();
     }
 
     @Override
@@ -430,8 +426,7 @@ public interface TacEmitter extends Visitor<FuncVisitor> {
         expr.args.forEach(arg -> arg.accept(this, mv));
         var temps = new ArrayList<Temp>();
         expr.args.forEach(arg -> temps.add(arg.val));
-        System.out.println(expr.toString()+expr.pos);
-        System.out.println(expr.symbol);
+
         if(expr.symbol.isMethodSymbol() && expr.expr instanceof Tree.VarSel)
         {
             var symbol = (MethodSymbol) expr.symbol;
@@ -459,7 +454,6 @@ public interface TacEmitter extends Visitor<FuncVisitor> {
             var funcpointer = mv.visitLoadFrom(base, 4);
             var isStatic = mv.visitLoadFrom(base);
 
-
             var nonStaticBanch = new Consumer<FuncVisitor>() {
                 @Override
                 public void accept(FuncVisitor v) {
@@ -467,9 +461,41 @@ public interface TacEmitter extends Visitor<FuncVisitor> {
                 }
             };
 
-            var zero = mv.visitLoad(1);
-            var judgeStatic = mv.visitBinary(TacInstr.Binary.Op.EQU, isStatic, zero);
-            emitIfThen(judgeStatic, nonStaticBanch,  mv);
+            var lambdaBanch = new Consumer<FuncVisitor>(){
+                @Override
+                public void accept(FuncVisitor v){
+                    var num = v.visitLoadFrom(base, 8);
+                    var index = v.visitLoad(0);
+                    Function<FuncVisitor, Temp> test = x -> x.visitBinary(TacInstr.Binary.Op.LES, index, num);;
+                    var body = new Consumer<FuncVisitor>() {
+                        @Override
+                        public void accept(FuncVisitor v) {
+                            var offset = v.visitBinary(TacInstr.Binary.Op.MUL, index, v.visitLoad(4));
+                            v.visitBinarySelf(TacInstr.Binary.Op.ADD, offset, v.visitLoad(12));
+                            var addr = v.visitBinary(TacInstr.Binary.Op.ADD, base, offset);
+                            var paramTemp = v.visitLoadFrom(addr);
+                            v.addParam(paramTemp);
+                            v.visitBinarySelf(TacInstr.Binary.Op.ADD, index, v.visitLoad(1));
+                        }
+                    };
+                    emitWhile(test, body, v.freshLabel(), v);
+                }
+            };
+
+            var elseBanch = new Consumer<FuncVisitor>(){
+                @Override
+                public void accept(FuncVisitor v){
+                    var two = v.visitLoad(2);
+                    var judgeLambda = v.visitBinary(TacInstr.Binary.Op.EQU, isStatic, two);
+                    emitIfThen(judgeLambda, lambdaBanch, v);
+                }
+            };
+
+            var one = mv.visitLoad(1);
+            var judgeStatic = mv.visitBinary(TacInstr.Binary.Op.EQU, isStatic, one);
+            emitIfThenElse(judgeStatic, nonStaticBanch, elseBanch, mv);
+
+
             if(expr.symbol.type.isVoidType())
                 mv.visitIndirectCall(funcpointer, temps, false);
             else
@@ -491,24 +517,45 @@ public interface TacEmitter extends Visitor<FuncVisitor> {
     }
 
     @Override
-    default void visitLambda(Tree.Lambda expr, FuncVisitor mv){
+    default void visitLambda(Tree.Lambda expr, FuncVisitor mv) {
         System.out.println(expr);
+        mv.setLambdaSymbol(expr.lambdaSymbol);
+
+        for(var item:((LambdaSymbol)expr.symbol).catchedSymbol)
+            System.out.println(item);
         var funcname = "lambda@"+expr.pos;
         var entry = new FuncLabel("_general_table_", funcname);
         var symbol = expr.lambdaSymbol;
 
-        if(!mv.judgeContain(entry))
-        {
+        if(!mv.judgeContain(entry)) {
             mv.putObjectFuncLabel(entry);
-            var newFunc = new FuncVisitor(entry, symbol.argTypes.size(), mv.ctx);
+            var newFunc = new FuncVisitor(entry, symbol.catchedSymbol.size() + symbol.argTypes.size(), mv.ctx);
+
+            newFunc.setLambdaSymbol((LambdaSymbol) expr.symbol);
             newFunc.putFuncLabel(entry);
+
+            boolean hasThis = false;
+            for (var param : symbol.catchedSymbol) {
+                if (param instanceof Tree.This)
+                {
+                    ((Tree.This) param).val = newFunc.getArgTemp(0);
+                    hasThis = true;
+                }
+
+            }
             int i = 0;
+            if(hasThis)
+                i = 1;
+            for (var param : symbol.catchedSymbol)
+            {
+                if(param instanceof VarSymbol)
+                    ((VarSymbol) param).temp = newFunc.getArgTemp(i);
+                i++;
+            }
             for (var param : expr.params) {
                 param.symbol.temp = newFunc.getArgTemp(i);
                 i++;
             }
-
-
             if(expr.isBlock)
             {
                 expr.body.accept(this, newFunc);
@@ -521,17 +568,14 @@ public interface TacEmitter extends Visitor<FuncVisitor> {
                 expr.expr.accept(this,newFunc);
                 newFunc.visitReturn(expr.expr.val);
             }
+            newFunc.setLambdaSymbol(null);
             newFunc.visitEnd();
+            System.out.println("newFunc end");
+
         }
+        expr.val = mv.visitCurrentLambda(funcname, symbol);
+        mv.setLambdaSymbol(null);
 
-        var vtable = mv.visitLoadVTable("_general_table_");
-        int offset = mv.getOffset("_general_table_", funcname);
-        var funcPointer = mv.visitLoadFrom(vtable, offset);
-
-        var memory = mv.visitIntrinsicCall(Intrinsic.ALLOCATE, true, mv.visitLoad(8));
-        mv.visitStoreTo(memory, mv.visitLoad(0));
-        mv.visitStoreTo(memory, 4, funcPointer);
-        expr.val = memory;
     }
 
     @Override
