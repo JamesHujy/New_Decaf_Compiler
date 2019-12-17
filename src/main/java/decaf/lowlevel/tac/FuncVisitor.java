@@ -253,20 +253,6 @@ public class FuncVisitor {
         return varSymbol.temp;
     }
 
-    public Temp visitThis()
-    {
-        if(currentSymbol == null)
-            return getArgTemp(0);
-        int i = 0;
-        for(var symbol:currentSymbol.catchedSymbol){
-            if(symbol instanceof Tree.This)
-                return visitLoadFrom(getArgTemp(0), 4 * (i+2));
-            else
-                i++;
-        }
-        return getArgTemp(0);
-
-    }
     public void addParam(Temp temp)
     {
         func.add(new TacInstr.Parm(temp));

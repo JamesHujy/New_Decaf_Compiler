@@ -400,12 +400,13 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                                 var lambdaScope = currentLambda.scope;
                                 var localScope = lambdaScope.nestedLocalScope();
                                 if(varScope != localScope && varScope != lambdaScope)
-                                    currentLambda.catchedSymbol.add(var);
+                                    currentLambda.catchedSymbol.add(0,expr.receiver.get());
                             }
                         }
                     }
                     else if(ctx.judgeLambda())
                     {
+
                         var varScope = var.domain();
                         var currentLambda = ctx.currentLambda();
                         var lambdaScope = currentLambda.scope;
@@ -435,13 +436,18 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                     expr.type = method.type;
                     expr.symbol = method;
 
-                    if(!method.isStatic() && ctx.currentMethod().isStatic())
+                    expr.isMethod = true;
+                    if(!method.isStatic())
                     {
-                        issue(new RefNonStaticError(expr.pos, ctx.currentMethod().name, expr.name));
+                        if( ctx.currentMethod().isStatic())
+                        {
+                            issue(new RefNonStaticError(expr.pos, ctx.currentMethod().name, expr.name));
+                        }
+                        expr.setThis();
+                        if(ctx.judgeLambda())
+                            ctx.currentLambda().catchedSymbol.add(0,expr.receiver.get());
                     }
-                    else expr.isMethod = true;
-                    if(ctx.judgeLambda() && !method.isStatic())
-                        ctx.currentLambda().catchedSymbol.add(method);
+
                     return;
                 }
             }

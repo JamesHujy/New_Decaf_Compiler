@@ -364,14 +364,14 @@ public interface TacEmitter extends Visitor<FuncVisitor> {
         else{
             if(expr.receiver.isPresent())
             {
-                if(expr.receiver.get() instanceof Tree.This)
+                expr.receiver.get().accept(this,mv);
+                if(expr.receiver.get() instanceof Tree.This && expr.symbol.isVarSymbol())
                 {
                     var symbol = (VarSymbol)expr.symbol;
                     expr.val = mv.visitMemberAccess(mv.getArgTemp(0), symbol.getOwner().name, expr.name);
                 }
                 else{
                     var receiver = expr.receiver.get();
-                    receiver.accept(this, mv);
                     expr.val = receiver.val;
                 }
 
@@ -409,7 +409,7 @@ public interface TacEmitter extends Visitor<FuncVisitor> {
 
     @Override
     default void visitThis(Tree.This expr, FuncVisitor mv) {
-        expr.val = mv.visitThis();
+        expr.val = mv.getArgTemp(0);
     }
 
     @Override
@@ -533,17 +533,7 @@ public interface TacEmitter extends Visitor<FuncVisitor> {
             newFunc.setLambdaSymbol((LambdaSymbol) expr.symbol);
             newFunc.putFuncLabel(entry);
 
-            boolean hasThis = false;
-            for (var param : symbol.catchedSymbol) {
-                if (param instanceof Tree.This)
-                {
-                    ((Tree.This) param).val = newFunc.getArgTemp(0);
-                    hasThis = true;
-                }
-            }
             int i = 0;
-            if(hasThis)
-                i = 1;
             for (var param : symbol.catchedSymbol)
             {
                 if(param instanceof VarSymbol)

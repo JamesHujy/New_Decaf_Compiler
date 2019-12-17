@@ -340,7 +340,6 @@ public final class Simulator {
         public void visitParm(TacInstr.Parm instr) {
             var frame = _call_stack.peek();
             _actual_args.add(frame.array[instr.value.index]);
-
             _pc++;
         }
 
@@ -422,7 +421,6 @@ public final class Simulator {
                 case LOAD -> frame.array[instr.dst.index] = _memory.load(base, offset);
                 case STORE -> _memory.store(frame.array[instr.dst.index], base, offset);
             }
-
             _pc++;
         }
     }
