@@ -409,9 +409,11 @@ public class FuncVisitor {
         for(var symbol:lambdasymbol.catchedSymbol)
         {
             if(symbol instanceof Tree.This)
-                visitStoreTo(memory, 12+i*4, ((Tree.This) symbol).val);
+                visitStoreTo(memory, 12+i*4, getArgTemp(0));
             else
+            {
                 visitStoreTo(memory, 12+i*4, ((VarSymbol)symbol).temp);
+            }
             i++;
         }
         return memory;

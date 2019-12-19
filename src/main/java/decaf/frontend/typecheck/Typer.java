@@ -372,6 +372,7 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
 
     @Override
     public void visitVarSel(Tree.VarSel expr, ScopeStack ctx) {
+
         if(ctx.judgeContain(expr.name))
         {
             issue(new UndeclVarError(expr.pos, expr.name));
@@ -399,8 +400,11 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                                 var currentLambda = ctx.currentLambda();
                                 var lambdaScope = currentLambda.scope;
                                 var localScope = lambdaScope.nestedLocalScope();
-                                if(varScope != localScope && varScope != lambdaScope)
+                                if(varScope != localScope && varScope != lambdaScope && !currentLambda.catchedThis)
+                                {
                                     currentLambda.catchedSymbol.add(0,expr.receiver.get());
+                                    currentLambda.catchedThis = true;
+                                }
                             }
                         }
                     }
@@ -444,8 +448,12 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                             issue(new RefNonStaticError(expr.pos, ctx.currentMethod().name, expr.name));
                         }
                         expr.setThis();
-                        if(ctx.judgeLambda())
+                        if(ctx.judgeLambda() && !ctx.currentLambda().catchedThis)
+                        {
                             ctx.currentLambda().catchedSymbol.add(0,expr.receiver.get());
+                            ctx.currentLambda().catchedThis = true;
+                        }
+
                     }
 
                     return;
@@ -465,8 +473,9 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         expr.type = BuiltInType.ERROR;
 
         if(receiver instanceof  Tree.This){
-            if(ctx.judgeLambda()){
+            if(ctx.judgeLambda() && !ctx.currentLambda().catchedThis){
                 ctx.currentLambda().catchedSymbol.add(0, receiver);
+                ctx.currentLambda().catchedThis = true;
             }
         }
 

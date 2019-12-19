@@ -114,7 +114,6 @@ public class ScopeStack {
             if(!lambdaScopeStack.empty())
             {
                 var tempTop = lambdaScopeStack.pop();
-                System.out.println(tempTop.getOwner());
                 for(var captured: lambdaSymbol.catchedSymbol)
                 {
                     if(captured instanceof Tree.This)

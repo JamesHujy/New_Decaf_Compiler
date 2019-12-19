@@ -374,7 +374,6 @@ public interface TacEmitter extends Visitor<FuncVisitor> {
                     var receiver = expr.receiver.get();
                     expr.val = receiver.val;
                 }
-
             }
             else {
                 if(expr.symbol.isMethodSymbol())
@@ -516,12 +515,7 @@ public interface TacEmitter extends Visitor<FuncVisitor> {
 
     @Override
     default void visitLambda(Tree.Lambda expr, FuncVisitor mv) {
-
         mv.setLambdaSymbol(expr.lambdaSymbol);
-        System.out.println(expr.symbol);
-        for(var item:((LambdaSymbol)expr.symbol).catchedSymbol)
-            System.out.println(item);
-        System.out.println("showend");
         var funcname = "lambda@"+expr.pos;
         var entry = new FuncLabel("_general_table_", funcname);
         var symbol = expr.lambdaSymbol;
@@ -562,7 +556,6 @@ public interface TacEmitter extends Visitor<FuncVisitor> {
         }
         expr.val = mv.visitCurrentLambda(funcname, symbol);
         mv.setLambdaSymbol(null);
-
     }
 
     @Override

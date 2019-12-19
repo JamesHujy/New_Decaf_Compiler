@@ -116,7 +116,6 @@ public final class Simulator {
                 return;
             }
 
-            System.out.println(_instrs.get(_pc));
             _instrs.get(_pc).accept(executor);
             count++;
         }
