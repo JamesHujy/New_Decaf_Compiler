@@ -1,10 +1,14 @@
 package decaf.frontend.scope;
 
-import decaf.frontend.symbol.*;
+import decaf.frontend.symbol.ClassSymbol;
+import decaf.frontend.symbol.MethodSymbol;
+import decaf.frontend.symbol.Symbol;
 import decaf.frontend.tree.Pos;
-import decaf.frontend.tree.Tree;
 
-import java.util.*;
+import java.util.ListIterator;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Stack;
 import java.util.function.Predicate;
 
 /**
@@ -66,10 +70,6 @@ public class ScopeStack {
         return currMethod;
     }
 
-    public LambdaSymbol currentLambda() {
-        return lambdaScopeStack.peek().getOwner();
-    }
-
     /**
      * Open a scope.
      * <p>
@@ -82,17 +82,13 @@ public class ScopeStack {
     public void open(Scope scope) {
         assert !scope.isGlobalScope();
         if (scope.isClassScope()) {
-            assert !currentScope().isFormalOrLocalScopeOrLambda();
+            assert !currentScope().isFormalOrLocalScope();
             var classScope = (ClassScope) scope;
             classScope.parentScope.ifPresent(this::open);
             currClass = classScope.getOwner();
         } else if (scope.isFormalScope()) {
             var formalScope = (FormalScope) scope;
             currMethod = formalScope.getOwner();
-
-        } else if (scope.isLambdaScope()) {
-            var lambdaScope = (LambdaScope) scope;
-            lambdaScopeStack.push(lambdaScope);
         }
         scopeStack.push(scope);
     }
@@ -105,32 +101,8 @@ public class ScopeStack {
      * Otherwise, only pop the current scope.
      */
     public void close() {
-
         assert !scopeStack.isEmpty();
         Scope scope = scopeStack.pop();
-        if(scope.isLambdaScope())
-        {
-            var lambdaSymbol = lambdaScopeStack.pop().getOwner();
-            if(!lambdaScopeStack.empty())
-            {
-                var tempTop = lambdaScopeStack.pop();
-                for(var captured: lambdaSymbol.catchedSymbol)
-                {
-                    if(captured instanceof Tree.This)
-                        tempTop.getOwner().catchedSymbol.add(captured);
-                    else{
-                        var defineIn = ((VarSymbol)captured).domain();
-                        while(defineIn.isLocalScope())
-                            defineIn = ((LocalScope)defineIn).getParentScope();
-                        if(defineIn != tempTop)
-                            if(!tempTop.getOwner().catchedSymbol.contains(captured))
-                                tempTop.getOwner().catchedSymbol.add(captured);
-                    }
-                }
-                lambdaScopeStack.push(tempTop);
-            }
-        }
-
         if (scope.isClassScope()) {
             while (!scopeStack.isEmpty()) {
                 scopeStack.pop();
@@ -174,14 +146,8 @@ public class ScopeStack {
      * @return innermost conflicting symbol (if any)
      */
     public Optional<Symbol> findConflict(String key) {
-        if (currentScope().isFormalOrLocalScopeOrLambda())
-            return findWhile(key, Scope::isFormalOrLocalScopeOrLambda, whatever -> true).or(() -> global.find(key));
-        return lookup(key);
-    }
-
-    public Optional<Symbol> findConflictLocally(String key) {
-        if (currentScope().isLocalScope())
-            return findWhile(key, Scope::isLocalScope, whatever -> true).or(() -> global.find(key));
+        if (currentScope().isFormalOrLocalScope())
+            return findWhile(key, Scope::isFormalOrLocalScope, whatever -> true).or(() -> global.find(key));
         return lookup(key);
     }
 
@@ -225,12 +191,7 @@ public class ScopeStack {
         currentScope().declare(symbol);
     }
 
-    public boolean judgeLambda(){
-        return !lambdaScopeStack.empty();
-    }
     private Stack<Scope> scopeStack = new Stack<>();
-    private Stack<LambdaScope> lambdaScopeStack = new Stack<>();
-    private Map<String, Pos> definingVar = new TreeMap<>();
     private ClassSymbol currClass;
     private MethodSymbol currMethod;
 
@@ -244,21 +205,4 @@ public class ScopeStack {
         }
         return cond.test(global) ? global.find(key) : Optional.empty();
     }
-
-    public void addDefining(String name, Pos pos){
-        definingVar.put(name, pos);
-    }
-
-    public void removeDefining(String name) {
-        definingVar.remove(name);
-    }
-
-    public boolean judgeContain(String var){
-        return definingVar.keySet().contains(var);
-    }
-
-    public Pos getPos(String name){
-        return definingVar.get(name);
-    }
-
 }

@@ -37,13 +37,11 @@ public abstract class Type {
         return false;
     }
 
-    public boolean isFuncType() { return false; }
-
-    public boolean isVoidType() {
+    public boolean isFuncType() {
         return false;
     }
 
-    public boolean isTFuncType() {
+    public boolean isVoidType() {
         return false;
     }
 

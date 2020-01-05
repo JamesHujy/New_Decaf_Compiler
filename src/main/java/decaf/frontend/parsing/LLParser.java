@@ -2,17 +2,13 @@ package decaf.frontend.parsing;
 
 import decaf.driver.Config;
 import decaf.driver.Phase;
-import decaf.driver.error.MsgError;
-import decaf.frontend.tree.Tree;
 import decaf.driver.error.DecafError;
+import decaf.frontend.tree.Tree;
 import decaf.lowlevel.log.IndentPrinter;
 import decaf.printing.PrettyTree;
 
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.sql.Driver;
-import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -25,12 +21,9 @@ public class LLParser extends Phase<InputStream, Tree.TopLevel> {
         super("parser-ll", config);
     }
 
-    private decaf.frontend.parsing.DecafLexer lexer;
-    boolean findError = false;
-
     @Override
     public Tree.TopLevel transform(InputStream input) {
-        lexer = new decaf.frontend.parsing.DecafLexer<Parser>(new InputStreamReader(input));
+        var lexer = new decaf.frontend.parsing.DecafLexer<Parser>(new InputStreamReader(input));
         var parser = new Parser();
         lexer.setup(parser, this);
         parser.setup(lexer, this);
@@ -60,6 +53,7 @@ public class LLParser extends Phase<InputStream, Tree.TopLevel> {
                 return;
             }
         }
+
         super.issue(error);
     }
 
@@ -106,12 +100,6 @@ public class LLParser extends Phase<InputStream, Tree.TopLevel> {
                 case Tokens.GREATER_EQUAL -> GREATER_EQUAL;
                 case Tokens.EQUAL -> EQUAL;
                 case Tokens.NOT_EQUAL -> NOT_EQUAL;
-                case Tokens.ABSTRACT -> ABSTRACT;
-                case Tokens.INFER -> INFER;
-                case Tokens.FUN -> FUN;
-                case Tokens.VAR -> VAR;
-
-
                 default -> code; // single-character, use their ASCII code!
             };
         }
@@ -125,39 +113,7 @@ public class LLParser extends Phase<InputStream, Tree.TopLevel> {
          * @param symbol the non-terminal to be parsed
          * @return the parsed value of {@code symbol} if parsing succeeds, or else {@code null}.
          */
-
-        private void error(String msg) {
-            issue(new MsgError(lexer.getPos(), msg));
-        }
-
-        private int lex() {
-            int token = -2;
-            try {
-                token = lexer.yylex();
-            } catch (Exception e) {
-                error("lexer error: " + e.getMessage());
-            }
-            return token;
-        }
-
         private SemValue parseSymbol(int symbol, Set<Integer> follow) {
-            Set<Integer> beginSet = beginSet(symbol);
-            Set<Integer> endSet = followSet(symbol);
-            endSet.addAll(follow);
-            follow = endSet;
-
-            if (!beginSet.contains(token)) { // Start error detection
-                findError = true;
-                error("syntax error");
-                while (!beginSet.contains(token) && !follow.contains(token)) {
-                    token = lex();
-                }
-                // If the error can't be restored, continue with next symbol.
-                if (!beginSet.contains(token) && follow.contains(token)) {
-                    return null;
-                }
-            }
-
             var result = query(symbol, token); // get production by lookahead symbol
             var actionId = result.getKey(); // get user-defined action
 
@@ -173,7 +129,7 @@ public class LLParser extends Phase<InputStream, Tree.TopLevel> {
                 ;
             }
 
-            if (!findError) act(actionId, params); // do user-defined action
+            act(actionId, params); // do user-defined action
             return params[0];
         }
 

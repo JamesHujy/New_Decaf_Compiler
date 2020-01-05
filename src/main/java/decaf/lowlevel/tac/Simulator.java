@@ -108,7 +108,7 @@ public final class Simulator {
         _halt = false;
 
         while (!_call_stack.isEmpty()) {
-            if (count >= 10000) {
+            if (count >= 100000) {
                 throw new Error("Max instruction limitation 10,0000 exceeds, maybe your program cannot terminate?");
             }
 
@@ -209,8 +209,7 @@ public final class Simulator {
 
         Frame(Label entry, int arraySize) {
             this.entry = entry;
-            int arraySize1 = arraySize;
-            this.array = new int[arraySize1];
+            this.array = new int[arraySize];
             var i = 0;
             for (var arg : _actual_args) { // copy actual arguments
                 this.array[i] = arg;
@@ -339,6 +338,7 @@ public final class Simulator {
         public void visitParm(TacInstr.Parm instr) {
             var frame = _call_stack.peek();
             _actual_args.add(frame.array[instr.value.index]);
+
             _pc++;
         }
 
@@ -420,6 +420,7 @@ public final class Simulator {
                 case LOAD -> frame.array[instr.dst.index] = _memory.load(base, offset);
                 case STORE -> _memory.store(frame.array[instr.dst.index], base, offset);
             }
+
             _pc++;
         }
     }
@@ -482,6 +483,7 @@ public final class Simulator {
             if (base % 4 != 0) {
                 throw new Error("Base address not aligned: " + base);
             }
+
             if (offset % 4 != 0) {
                 throw new Error("Offset not aligned: " + base);
             }

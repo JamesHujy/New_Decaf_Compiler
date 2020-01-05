@@ -14,7 +14,7 @@ import java.util.List;
  */
 class SemValue {
     enum Kind {
-        TOKEN, CLASS, CLASS_LIST, FIELD, FIELD_LIST, VAR, VAR_LIST, TYPE, TYPE_LIST, STMT, STMT_LIST, BLOCK, EXPR, EXPR_LIST,
+        TOKEN, CLASS, CLASS_LIST, FIELD, FIELD_LIST, VAR, VAR_LIST, TYPE, STMT, STMT_LIST, BLOCK, EXPR, EXPR_LIST,
         LVALUE, ID, TEMPORARY
     }
 
@@ -48,9 +48,6 @@ class SemValue {
     int code;
     int intVal;
     boolean boolVal;
-    int hasBlock;
-    int hasFunc;
-
     String strVal;
 
     /**
@@ -85,7 +82,6 @@ class SemValue {
     List<Tree.LocalVarDef> varList; // a list can only contain local vars
 
     Tree.TypeLit type;
-    List<Tree.TypeLit> typeList;
 
     Tree.Stmt stmt;
     List<Tree.Stmt> stmtList;
@@ -134,10 +130,6 @@ class SemValue {
                 case Tokens.LESS_EQUAL -> "operator : <=";
                 case Tokens.NOT_EQUAL -> "operator : !=";
                 case Tokens.OR -> "operator : ||";
-                case Tokens.ABSTRACT -> "keyword  :  abstract";
-                case Tokens.VAR -> "keyword  :  var";
-                case Tokens.FUN -> "keyword  :  fun";
-                case Tokens.INFER -> "operator : => ";
                 default -> "operator : " + (char) code;
             };
             case CLASS -> "CLASS: " + clazz;
@@ -147,7 +139,6 @@ class SemValue {
             case VAR -> "VAR: " + type + " " + id;
             case VAR_LIST -> "VAR_LIST: " + varList;
             case TYPE -> "TYPE: " + type;
-            case TYPE_LIST -> "TYPE_LIST: " + typeList;
             case STMT -> "STMT: " + stmt;
             case STMT_LIST -> "STMT_LIST: " + stmtList;
             case BLOCK -> "BLOCK: " + block;

@@ -1,13 +1,9 @@
 package decaf.lowlevel.tac;
 
-import decaf.frontend.symbol.LambdaSymbol;
-import decaf.frontend.symbol.VarSymbol;
-import decaf.frontend.tree.Tree;
 import decaf.lowlevel.instr.Temp;
 import decaf.lowlevel.label.FuncLabel;
 import decaf.lowlevel.label.Label;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -203,18 +199,21 @@ public class FuncVisitor {
      * @return the fresh temp if we need return (or else null)
      */
     public Temp visitMemberCall(Temp object, String clazz, String method, List<Temp> args, boolean needReturn) {
+        Temp temp = null;
         var vtbl = visitLoadFrom(object);
         var entry = visitLoadFrom(vtbl, ctx.getOffset(clazz, method));
 
         func.add(new TacInstr.Parm(object));
-        return visitIndirectCall(entry, args, needReturn);
-    }
-
-    public Temp visitMemberObject(Temp object, String clazz, String method, List<Temp> args, boolean needReturn)
-    {
-        var vtbl = visitLoadFrom(object);
-        var entry = visitLoadFrom(vtbl, ctx.getOffset(clazz, method));
-        return visitIndirectCall(entry, args, needReturn);
+        for (var arg : args) {
+            func.add(new TacInstr.Parm(arg));
+        }
+        if (needReturn) {
+            temp = freshTemp();
+            func.add(new TacInstr.IndirectCall(temp, entry));
+        } else {
+            func.add(new TacInstr.IndirectCall(entry));
+        }
+        return temp;
     }
 
     /**
@@ -224,39 +223,6 @@ public class FuncVisitor {
         visitMemberCall(object, clazz, method, args, false);
     }
 
-    public Temp visitIndirectCall(Temp pointer, List<Temp> args, boolean needReturn){
-        for(var arg: args)
-        {
-            func.add(new TacInstr.Parm(arg));
-        }
-        Temp temp = null;
-        if (needReturn) {
-            temp = freshTemp();
-            func.add(new TacInstr.IndirectCall(temp, pointer));
-        } else {
-            func.add(new TacInstr.IndirectCall(pointer));
-        }
-        return temp;
-    }
-
-    public Temp visitCapture(VarSymbol varSymbol)
-    {
-        if(currentSymbol == null)
-            return varSymbol.temp;
-        int i = 0;
-        for(var currentVar: currentSymbol.catchedSymbol){
-            if(varSymbol == currentVar)
-                return visitLoadFrom(getArgTemp(0), (i + 2)*4);
-            else
-                i++;
-        }
-        return varSymbol.temp;
-    }
-
-    public void addParam(Temp temp)
-    {
-        func.add(new TacInstr.Parm(temp));
-    }
     /**
      * Append instructions to invoke a static method.
      *
@@ -266,7 +232,6 @@ public class FuncVisitor {
      * @param needReturn do we need a fresh temp to store the return value? (default false)
      * @return the fresh temp if we need return (or else null)
      */
-
     public Temp visitStaticCall(String clazz, String method, List<Temp> args, boolean needReturn) {
         Temp temp = null;
         var entry = ctx.getFuncLabel(clazz, method);
@@ -394,31 +359,6 @@ public class FuncVisitor {
         func.add(instr);
     }
 
-    public Temp visitCurrentLambda(String funcname, LambdaSymbol lambdasymbol)
-    {
-        var vtable = visitLoadVTable("_general_table_");
-        int offset = getOffset("_general_table_", funcname);
-        var funcPointer = visitLoadFrom(vtable, offset);
-
-        int space = 4 * (lambdasymbol.catchedSymbol.size() + 3);
-        var memory = visitIntrinsicCall(Intrinsic.ALLOCATE, true, visitLoad(space));
-        visitStoreTo(memory, visitLoad(2));
-        visitStoreTo(memory, 4, funcPointer);
-        visitStoreTo(memory, 8, visitLoad(lambdasymbol.catchedSymbol.size()));
-        int i = 0;
-        for(var symbol:lambdasymbol.catchedSymbol)
-        {
-            if(symbol instanceof Tree.This)
-                visitStoreTo(memory, 12+i*4, getArgTemp(0));
-            else
-            {
-                visitStoreTo(memory, 12+i*4, ((VarSymbol)symbol).temp);
-            }
-            i++;
-        }
-        return memory;
-    }
-
     /**
      * Call this when all instructions in this function are done.
      */
@@ -473,7 +413,7 @@ public class FuncVisitor {
         return nextTempId;
     }
 
-    public FuncVisitor(FuncLabel entry, int numArgs, ProgramWriter.Context ctx) {
+    FuncVisitor(FuncLabel entry, int numArgs, ProgramWriter.Context ctx) {
         this.ctx = ctx;
         func = new TacFunc(entry, numArgs);
         visitLabel(entry);
@@ -483,46 +423,11 @@ public class FuncVisitor {
         }
     }
 
-    public void putFuncLabel(FuncLabel label)
-    {
-        ctx.putFuncLabel(label.clazz, label.method);
-    }
+    private TacFunc func;
 
-    public void putObjectFuncLabel(FuncLabel entry){
-        ctx.pubFuncObject(entry);
-    }
-
-    public boolean judgeContain(FuncLabel entry)
-    {
-        return ctx.judgeContrain(entry);
-    }
-
-    public int getOffset(String clazz, String name)
-    {
-        return ctx.getOffset(clazz, name);
-    }
-
-    public void shoeFuns()
-    {
-        for(var funs:ctx.funcs)
-        {
-            System.out.println(funs.entry);
-        }
-    }
-
-    public void setLambdaSymbol(LambdaSymbol lambdaSymbol)
-    {
-        this.currentSymbol = lambdaSymbol;
-    }
-
-
-    public TacFunc func;
-
-    public ProgramWriter.Context ctx;
+    private ProgramWriter.Context ctx;
 
     private int nextTempId = 0;
 
     private Temp[] argsTemps;
-
-    private LambdaSymbol currentSymbol;
 }

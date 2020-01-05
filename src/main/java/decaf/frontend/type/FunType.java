@@ -5,9 +5,9 @@ import java.util.List;
 /**
  * Function type.
  */
-public class FunType extends Type {
+public final class FunType extends Type {
 
-    public Type returnType;
+    public final Type returnType;
 
     public final List<Type> argTypes;
 
@@ -25,8 +25,7 @@ public class FunType extends Type {
         if (type.eq(BuiltInType.ERROR)) {
             return true;
         }
-
-        if (!type.isFuncType()&&!type.isTFuncType()) {
+        if (!type.isFuncType()) {
             return false;
         }
 
@@ -85,9 +84,5 @@ public class FunType extends Type {
     @Override
     public boolean isFuncType() {
         return true;
-    }
-
-    public void setReturnType(Type type) {
-        this.returnType = type;
     }
 }

@@ -20,11 +20,9 @@ public abstract class Symbol implements Comparable<Symbol> {
 
     public final String name;
 
-    public Type type;
+    public final Type type;
 
     public final Pos pos;
-
-    public boolean isStatic;
 
     Symbol(String name, Type type, Pos pos) {
         this.name = name;
@@ -54,10 +52,6 @@ public abstract class Symbol implements Comparable<Symbol> {
     }
 
     public boolean isMethodSymbol() {
-        return false;
-    }
-
-    public boolean isLambdaSymbol(){
         return false;
     }
 

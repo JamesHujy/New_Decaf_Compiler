@@ -5,14 +5,18 @@ import decaf.driver.Phase;
 import decaf.driver.error.*;
 import decaf.frontend.scope.*;
 import decaf.frontend.symbol.ClassSymbol;
-import decaf.frontend.symbol.LambdaSymbol;
 import decaf.frontend.symbol.MethodSymbol;
 import decaf.frontend.symbol.VarSymbol;
 import decaf.frontend.tree.Tree;
-import decaf.frontend.type.*;
+import decaf.frontend.type.BuiltInType;
+import decaf.frontend.type.ClassType;
+import decaf.frontend.type.FunType;
+import decaf.frontend.type.Type;
 
-import java.sql.SQLSyntaxErrorException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Map;
+import java.util.Optional;
+import java.util.TreeMap;
 
 /**
  * The namer phase: resolve all symbols defined in the abstract syntax tree and store them in symbol tables (i.e.
@@ -83,7 +87,7 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         //  static void main() { ... }
         boolean found = false;
         for (var clazz : classes.values()) {
-            if (clazz.name.equals("Main") && !clazz.isAbstract) {
+            if (clazz.name.equals("Main")) {
                 var symbol = clazz.symbol.scope.find("main");
                 if (symbol.isPresent() && symbol.get().isMethodSymbol()) {
                     var method = (MethodSymbol) symbol.get();
@@ -154,32 +158,20 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             var base = global.getClass(clazz.parent.get().name);
             var type = new ClassType(clazz.name, base.type);
             var scope = new ClassScope(base.scope);
-            var symbol = new ClassSymbol(clazz.isAbstract, clazz.name, base, type, scope, clazz.pos);
+            var symbol = new ClassSymbol(clazz.name, base, type, scope, clazz.pos);
             global.declare(symbol);
             clazz.symbol = symbol;
         } else {
             var type = new ClassType(clazz.name);
             var scope = new ClassScope();
-            var symbol = new ClassSymbol(clazz.isAbstract, clazz.name, type, scope, clazz.pos);
+            var symbol = new ClassSymbol(clazz.name, type, scope, clazz.pos);
             global.declare(symbol);
             clazz.symbol = symbol;
         }
     }
 
     @Override
-    public void visitBinary(Tree.Binary expr, ScopeStack ctx) {
-        expr.lhs.accept(this, ctx);
-        expr.rhs.accept(this, ctx);
-    }
-
-    @Override
-    public void visitUnary(Tree.Unary unary, ScopeStack ctx){
-        unary.operand.accept(this, ctx);
-    }
-
-    @Override
     public void visitClassDef(Tree.ClassDef clazz, ScopeStack ctx) {
-
         if (clazz.resolved) return;
 
         if (clazz.hasParent()) {
@@ -190,82 +182,14 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         for (var field : clazz.fields) {
             field.accept(this, ctx);
         }
-
-        boolean hasAbstractError = false;
-        if(!clazz.isAbstract && clazz.hasParent())
-        {
-            var parentAbstract = clazz.superClass.symbol.getAbstractMethod();
-            for(var method:parentAbstract)
-            {
-
-                if(!clazz.symbol.scope.containsKey(method))
-                {
-                    issue(new BadAbstractMethodError(clazz.pos, clazz.name));
-                    hasAbstractError = true;
-                    break;
-                }
-            }
-        }
-        if(!hasAbstractError)
-        {
-            for (var symbol : clazz.symbol.scope)
-            {
-                if(symbol.isMethodSymbol())
-                {
-                    var methodSymbol = (MethodSymbol) symbol;
-                    if(methodSymbol.isAbstract() && !clazz.isAbstract)
-                    {
-                        issue(new BadAbstractMethodError(clazz.pos, clazz.name));
-                        break;
-                    }
-                }
-            }
-        }
         ctx.close();
         clazz.resolved = true;
     }
 
     @Override
-    public void visitCall(Tree.Call expr, ScopeStack ctx) {
-        expr.expr.accept(this, ctx);
-        for (var para : expr.args)
-            para.accept(this, ctx);
-    }
-
-    @Override
-    public void visitExprEval(Tree.ExprEval expr, ScopeStack ctx)
-    {
-        expr.expr.accept(this, ctx);
-    }
-
-    @Override
-    public void visitVarSel(Tree.VarSel expr, ScopeStack ctx)
-    {
-        if(expr.receiver.isPresent())
-            expr.receiver.get().accept(this, ctx);
-    }
-
-    @Override
-    public void visitNewArray(Tree.NewArray newArray, ScopeStack ctx)
-    {
-        newArray.length.accept(this, ctx);
-    }
-
-    @Override
-    public void visitClassTest(Tree.ClassTest classTest, ScopeStack ctx)
-    {
-        classTest.obj.accept(this, ctx);
-    }
-
-    @Override
-    public void visitClassCast(Tree.ClassCast classCast, ScopeStack ctx)
-    {
-        classCast.obj.accept(this, ctx);
-    }
-
-    @Override
     public void visitVarDef(Tree.VarDef varDef, ScopeStack ctx) {
         varDef.typeLit.accept(this, ctx);
+
         var earlier = ctx.findConflict(varDef.name);
         if (earlier.isPresent()) {
             if (earlier.get().isVarSymbol() && earlier.get().domain() != ctx.currentScope()) {
@@ -275,6 +199,7 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             }
             return;
         }
+
         if (varDef.typeLit.type.eq(BuiltInType.VOID)) {
             issue(new BadVarTypeError(varDef.pos, varDef.name));
             return;
@@ -293,10 +218,6 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         if (earlier.isPresent()) {
             if (earlier.get().isMethodSymbol()) { // may be overriden
                 var suspect = (MethodSymbol) earlier.get();
-                if(!suspect.isAbstract() && method.isAbstract())
-                {
-                    issue(new DeclConflictError(method.pos, method.name, earlier.get().pos));
-                }
                 if (suspect.domain() != ctx.currentScope() && !suspect.isStatic() && !method.isStatic()) {
                     // Only non-static methods can be overriden, but the type signature must be equivalent.
                     var formal = new FormalScope();
@@ -307,12 +228,12 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                         ctx.declare(symbol);
                         method.symbol = symbol;
                         ctx.open(formal);
-                        if(!method.isAbstract())
-                            method.body.accept(this, ctx);
+                        method.body.accept(this, ctx);
                         ctx.close();
                     } else {
                         issue(new BadOverrideError(method.pos, method.name, suspect.owner.name));
                     }
+
                     return;
                 }
             }
@@ -320,6 +241,7 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             issue(new DeclConflictError(method.pos, method.name, earlier.get().pos));
             return;
         }
+
         var formal = new FormalScope();
         typeMethod(method, ctx, formal);
         var symbol = new MethodSymbol(method.name, method.type, formal, method.pos, method.modifiers,
@@ -327,10 +249,7 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         ctx.declare(symbol);
         method.symbol = symbol;
         ctx.open(formal);
-        if(!method.isAbstract())
-        {
-            method.body.accept(this, ctx);
-        }
+        method.body.accept(this, ctx);
         ctx.close();
     }
 
@@ -360,31 +279,6 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
     @Override
     public void visitLocalVarDef(Tree.LocalVarDef def, ScopeStack ctx) {
         def.typeLit.accept(this, ctx);
-        if(ctx.judgeContain(def.name))
-        {
-            issue(new DeclConflictError(def.pos, def.name, ctx.getPos(def.name)));
-        }
-        if(!def.isVar && def.initVal.isPresent())
-        {
-            if(def.initVal.get() instanceof Tree.Lambda)
-                ctx.addDefining(def.name, def.pos);
-
-            def.initVal.get().accept(this, ctx);
-            if(def.initVal.get() instanceof Tree.Lambda)
-                ctx.removeDefining(def.name);
-        }
-        else if(def.isVar)
-        {
-            if(def.VarExpr instanceof Tree.Lambda)
-                ctx.addDefining(def.name, def.pos);
-
-            def.VarExpr.accept(this, ctx);
-            if(def.VarExpr instanceof Tree.Lambda)
-                ctx.removeDefining(def.name);
-
-        }
-        ctx.removeDefining(def.name);
-
 
         var earlier = ctx.findConflict(def.name);
         if (earlier.isPresent()) {
@@ -409,7 +303,6 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         loop.scope = new LocalScope(ctx.currentScope());
         ctx.open(loop.scope);
         loop.init.accept(this, ctx);
-        loop.cond.accept(this, ctx);
         for (var stmt : loop.body.stmts) {
             stmt.accept(this, ctx);
         }
@@ -417,72 +310,14 @@ public class Namer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
     }
 
     @Override
-    public void visitAssign(Tree.Assign assign, ScopeStack ctx){
-        assign.lhs.accept(this, ctx);
-        assign.rhs.accept(this, ctx);
-    }
-
-    @Override
     public void visitIf(Tree.If stmt, ScopeStack ctx) {
-        stmt.cond.accept(this, ctx);
         stmt.trueBranch.accept(this, ctx);
         stmt.falseBranch.ifPresent(b -> b.accept(this, ctx));
     }
 
     @Override
     public void visitWhile(Tree.While loop, ScopeStack ctx) {
-        loop.cond.accept(this, ctx);
         loop.body.accept(this, ctx);
     }
 
-
-    @Override
-    public void visitReturn(Tree.Return stmt, ScopeStack ctx) {
-        if(stmt.expr.isPresent()) {
-            stmt.expr.get().accept(this, ctx);
-        }
-    }
-
-    @Override
-    public void visitPrint(Tree.Print print, ScopeStack ctx) {
-        for(var expr:print.exprs)
-            expr.accept(this, ctx);
-    }
-
-    @Override
-    public void visitIndexSel(Tree.IndexSel indexSel, ScopeStack ctx){
-        indexSel.array.accept(this, ctx);
-        indexSel.index.accept(this, ctx);
-    }
-    @Override
-    public void visitLambda(Tree.Lambda lambda, ScopeStack ctx) {
-        lambda.scope = new LambdaScope(ctx.currentScope());
-        ctx.open(lambda.scope);
-
-        var argsTypes = new ArrayList<Type>();
-        for(var paras:lambda.params) {
-            paras.accept(this, ctx);
-            paras.typeLit.accept(this, ctx);
-            argsTypes.add(paras.typeLit.type);
-        }
-        lambda.lambdaSymbol = new LambdaSymbol(BuiltInType.NULL, argsTypes, (LambdaScope) ctx.currentScope(), lambda.pos);
-
-
-        lambda.type = lambda.lambdaSymbol.type;
-        ctx.declare(lambda.lambdaSymbol);
-        lambda.scope.setOwner(lambda.lambdaSymbol);
-
-        if(lambda.isBlock)
-        {
-            lambda.body.accept(this,ctx);
-        }
-        else
-        {
-            var scope = new LocalScope(ctx.currentScope());
-            ctx.open(scope);
-            lambda.expr.accept(this, ctx);
-            ctx.close();
-        }
-        ctx.close();
-    }
 }

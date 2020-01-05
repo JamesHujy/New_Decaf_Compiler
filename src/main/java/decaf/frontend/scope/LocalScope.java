@@ -1,8 +1,5 @@
 package decaf.frontend.scope;
 
-import decaf.frontend.symbol.LambdaSymbol;
-import decaf.frontend.tree.Tree;
-
 import java.util.ArrayList;
 import java.util.List;
 
@@ -11,24 +8,14 @@ import java.util.List;
  */
 public class LocalScope extends Scope {
 
-    private Scope parentScope;
-
     public LocalScope(Scope parent) {
         super(Kind.LOCAL);
-        this.parentScope = parent;
+        assert parent.isFormalOrLocalScope();
         if (parent.isFormalScope()) {
             ((FormalScope) parent).setNested(this);
-        }
-        else if(parent.isLambdaScope()){
-            ((LambdaScope) parent).setNested(this);
-        }
-        else {
+        } else {
             ((LocalScope) parent).nested.add(this);
         }
-    }
-
-    public Scope getParentScope() {
-        return parentScope;
     }
 
     @Override
@@ -41,9 +28,9 @@ public class LocalScope extends Scope {
      *
      * @return local scopes
      */
-    public List<Scope> nestedLocalScopes() {
+    public List<LocalScope> nestedLocalScopes() {
         return nested;
     }
 
-    public List<Scope> nested = new ArrayList<>();
+    private List<LocalScope> nested = new ArrayList<>();
 }

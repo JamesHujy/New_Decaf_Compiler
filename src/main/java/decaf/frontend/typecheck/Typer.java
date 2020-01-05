@@ -3,19 +3,20 @@ package decaf.frontend.typecheck;
 import decaf.driver.Config;
 import decaf.driver.Phase;
 import decaf.driver.error.*;
-import decaf.frontend.scope.*;
-import decaf.frontend.symbol.*;
+import decaf.frontend.scope.ScopeStack;
+import decaf.frontend.symbol.ClassSymbol;
+import decaf.frontend.symbol.MethodSymbol;
+import decaf.frontend.symbol.VarSymbol;
 import decaf.frontend.tree.Pos;
 import decaf.frontend.tree.Tree;
-import decaf.frontend.type.*;
+import decaf.frontend.type.ArrayType;
+import decaf.frontend.type.BuiltInType;
+import decaf.frontend.type.ClassType;
+import decaf.frontend.type.Type;
 import decaf.lowlevel.log.IndentPrinter;
 import decaf.printing.PrettyScope;
 
-import java.sql.BatchUpdateException;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Optional;
-import java.util.logging.LogManager;
 
 /**
  * The typer phase: type check abstract syntax tree and annotate nodes with inferred (and checked) types.
@@ -61,12 +62,9 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
     @Override
     public void visitMethodDef(Tree.MethodDef method, ScopeStack ctx) {
         ctx.open(method.symbol.scope);
-        if(!method.isAbstract())
-        {
-            method.body.accept(this, ctx);
-            if (!method.symbol.type.returnType.isVoidType() && !method.body.returns) {
-                issue(new MissingReturnError(method.body.pos));
-            }
+        method.body.accept(this, ctx);
+        if (!method.symbol.type.returnType.isVoidType() && !method.body.returns) {
+            issue(new MissingReturnError(method.body.pos));
         }
         ctx.close();
     }
@@ -85,8 +83,8 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         for (var stmt : block.stmts) {
             stmt.accept(this, ctx);
         }
-        block.returns = !block.stmts.isEmpty() && block.stmts.get(block.stmts.size() - 1).returns;
         ctx.close();
+        block.returns = !block.stmts.isEmpty() && block.stmts.get(block.stmts.size() - 1).returns;
     }
 
     @Override
@@ -96,31 +94,7 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         var lt = stmt.lhs.type;
         var rt = stmt.rhs.type;
 
-        stmt.lhs.symbol = stmt.rhs.symbol;
-
-        if(ctx.judgeLambda())
-        {
-            if(stmt.lhs instanceof Tree.VarSel && !((Tree.VarSel)stmt.lhs).receiver.isPresent())
-            {
-                var varsel = (Tree.VarSel) stmt.lhs;
-                var captureSymbol = ctx.lookupBefore(varsel.name, ctx.currentLambda().pos);
-                if(captureSymbol.isPresent() && !ctx.currentLambda().scope.find(varsel.name).isPresent()
-                        && !captureSymbol.get().domain().equals(ctx.currentClass().scope)){
-                    issue(new AssignCaptureError(stmt.pos));
-                }
-            }
-            return;
-        }
-        if(stmt.lhs instanceof Tree.VarSel)
-        {
-            var varsel = (Tree.VarSel) stmt.lhs;
-
-            if(varsel.isMethod)
-            {
-                issue(new AssignMethodError(stmt.pos, varsel.name));
-            }
-        }
-        if (lt.noError() && (!rt.subtypeOf(lt))) {
+        if (lt.noError() && (lt.isFuncType() || !rt.subtypeOf(lt))) {
             issue(new IncompatBinOpError(stmt.pos, lt.toString(), "=", rt.toString()));
         }
     }
@@ -171,36 +145,13 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
 
     @Override
     public void visitReturn(Tree.Return stmt, ScopeStack ctx) {
-        if(ctx.judgeLambda()) {
-            if(stmt.expr.isPresent())
-            {
-                stmt.expr.get().accept(this, ctx);
-                stmt.returns = true;
-                stmt.returnType = stmt.expr.get().type;
-            }
-            else
-            {
-                stmt.returns = false;
-                stmt.returnType = BuiltInType.VOID;
-            }
-
-            var actual = stmt.returnType;
-
-            var lambdaSymbol = ctx.currentLambda();
-
-            lambdaSymbol.returnTypeList.add(actual);
+        var expected = ctx.currentMethod().type.returnType;
+        stmt.expr.ifPresent(e -> e.accept(this, ctx));
+        var actual = stmt.expr.map(e -> e.type).orElse(BuiltInType.VOID);
+        if (actual.noError() && !actual.subtypeOf(expected)) {
+            issue(new BadReturnTypeError(stmt.pos, expected.toString(), actual.toString()));
         }
-        else{
-            var expected = ctx.currentMethod().type.returnType;
-            stmt.expr.ifPresent(e -> e.accept(this, ctx));
-            var actual = stmt.expr.map(e -> e.type).orElse(BuiltInType.VOID);
-            if (actual.noError() && !actual.subtypeOf(expected)) {
-                issue(new BadReturnTypeError(stmt.pos, expected.toString(), actual.toString()));
-            }
-            stmt.returns = stmt.expr.isPresent();
-            stmt.returnType = actual;
-        }
-
+        stmt.returns = stmt.expr.isPresent();
     }
 
     @Override
@@ -346,14 +297,9 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
     @Override
     public void visitNewClass(Tree.NewClass expr, ScopeStack ctx) {
         var clazz = ctx.lookupClass(expr.clazz.name);
-
         if (clazz.isPresent()) {
             expr.symbol = clazz.get();
             expr.type = expr.symbol.type;
-            if(expr.symbol.isAbstract)
-            {
-                issue(new NewAbstractClassError(expr.pos, expr.clazz.name));
-            }
         } else {
             issue(new ClassNotFoundError(expr.pos, expr.clazz.name));
             expr.type = BuiltInType.ERROR;
@@ -372,18 +318,10 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
 
     @Override
     public void visitVarSel(Tree.VarSel expr, ScopeStack ctx) {
-
-        if(ctx.judgeContain(expr.name))
-        {
-            issue(new UndeclVarError(expr.pos, expr.name));
-            expr.type = BuiltInType.ERROR;
-            return;
-        }
         if (expr.receiver.isEmpty()) {
             // Variable, which should be complicated since a legal variable could refer to a local var,
             // a visible member var, and a class name.
             var symbol = ctx.lookupBefore(expr.name, localVarDefPos.orElse(expr.pos));
-
             if (symbol.isPresent()) {
                 if (symbol.get().isVarSymbol()) {
                     var var = (VarSymbol) symbol.get();
@@ -394,68 +332,15 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                             issue(new RefNonStaticError(expr.pos, ctx.currentMethod().name, expr.name));
                         } else {
                             expr.setThis();
-                            if (ctx.judgeLambda())
-                            {
-                                var varScope = var.domain();
-                                var currentLambda = ctx.currentLambda();
-                                var lambdaScope = currentLambda.scope;
-                                var localScope = lambdaScope.nestedLocalScope();
-                                if(varScope != localScope && varScope != lambdaScope && !currentLambda.catchedThis)
-                                {
-                                    currentLambda.catchedSymbol.add(0,expr.receiver.get());
-                                    currentLambda.catchedThis = true;
-                                }
-                            }
-                        }
-                    }
-                    else if(ctx.judgeLambda())
-                    {
-
-                        var varScope = var.domain();
-                        var currentLambda = ctx.currentLambda();
-                        var lambdaScope = currentLambda.scope;
-                        while(varScope.isLocalScope())
-                            varScope = ((LocalScope)varScope).getParentScope();
-                        if(varScope != lambdaScope)
-                        {
-                            if(!currentLambda.catchedSymbol.contains(var))
-                            {
-                                currentLambda.catchedSymbol.add(var);
-                            }
                         }
                     }
                     return;
                 }
-                if (symbol.get().isClassSymbol()) { // special case: a class name
+
+                if (symbol.get().isClassSymbol() && allowClassNameVar) { // special case: a class name
                     var clazz = (ClassSymbol) symbol.get();
                     expr.type = clazz.type;
-                    expr.symbol = new VarSymbol(expr.name, clazz.type, clazz.pos);
                     expr.isClassName = true;
-                    return;
-                }
-
-                if(symbol.get().isMethodSymbol())
-                {
-                    var method = (MethodSymbol) symbol.get();
-                    expr.type = method.type;
-                    expr.symbol = method;
-
-                    expr.isMethod = true;
-                    if(!method.isStatic())
-                    {
-                        if( ctx.currentMethod().isStatic())
-                        {
-                            issue(new RefNonStaticError(expr.pos, ctx.currentMethod().name, expr.name));
-                        }
-                        expr.setThis();
-                        if(ctx.judgeLambda() && !ctx.currentLambda().catchedThis)
-                        {
-                            ctx.currentLambda().catchedSymbol.add(0,expr.receiver.get());
-                            ctx.currentLambda().catchedThis = true;
-                        }
-
-                    }
-
                     return;
                 }
             }
@@ -464,6 +349,7 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
             issue(new UndeclVarError(expr.pos, expr.name));
             return;
         }
+
         // has receiver
         var receiver = expr.receiver.get();
         allowClassNameVar = true;
@@ -472,87 +358,40 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
         var rt = receiver.type;
         expr.type = BuiltInType.ERROR;
 
-        if(receiver instanceof  Tree.This){
-            if(ctx.judgeLambda() && !ctx.currentLambda().catchedThis){
-                ctx.currentLambda().catchedSymbol.add(0, receiver);
-                ctx.currentLambda().catchedThis = true;
-            }
-        }
-
-        if(receiver instanceof Tree.VarSel)
-        {
+        if (receiver instanceof Tree.VarSel) {
             var v1 = (Tree.VarSel) receiver;
-            if(v1.isClassName)
-            {
-                var clazz = ctx.getClass(v1.name);
-                String methodName = expr.name;
-
-                var symbol = clazz.scope.lookup(methodName);
-                if(symbol.isPresent()) {
-                    if (symbol.get().isMethodSymbol()) {
-                        var method = (MethodSymbol) symbol.get();
-                        expr.type = method.type;
-                        expr.symbol = method;
-                        if (!method.isStatic()) {
-                            issue(new NotClassFieldError(expr.pos, expr.name, v1.type.toString()));
-                        }
-                        else
-                            expr.isMethod = true;
-
-                    } else if (symbol.get().isVarSymbol()) {
-                        var var = (VarSymbol) symbol.get();
-                        expr.symbol = var;
-                        expr.type = var.type;
-                        issue(new NotClassFieldError(expr.pos, expr.name, v1.type.toString()));
-                    }
-                }
+            if (v1.isClassName) {
+                // special case like MyClass.foo: report error cannot access field 'foo' from 'class : MyClass'
+                issue(new NotClassFieldError(expr.pos, expr.name, ctx.getClass(v1.name).type.toString()));
                 return;
             }
-            else if(expr.name.equals("length")) {
-                if (v1.type.isArrayType())
-                {
-                    ArrayList<Type> argsList = new ArrayList<>();
-                    expr.type = new FunType(BuiltInType.INT, argsList);
-                }
-                else
-                {
-                    issue(new NotClassFieldError(expr.pos, "length", v1.type.toString()));
-                }
-            }
         }
 
-        if(!rt.noError())
+        if (!rt.noError()) {
             return;
-        if(rt.isClassType())
-        {
-            var ct = (ClassType) rt;
-            var field = ctx.getClass(ct.name).scope.lookup(expr.name);
-            if (field.isPresent()) {
-                if(field.get().isVarSymbol())
-                {
-                    var var = (VarSymbol) field.get();
-                    if (var.isMemberVar()) {
-                        expr.symbol = var;
-                        expr.type = var.type;
-                        if (!ctx.currentClass().type.subtypeOf(var.getOwner().type)) {
-                            // member vars are protected
-                            issue(new FieldNotAccessError(expr.pos, expr.name, ct.toString()));
-                        }
-                    }
+        }
+
+        if (!rt.isClassType()) {
+            issue(new NotClassFieldError(expr.pos, expr.name, rt.toString()));
+            return;
+        }
+
+        var ct = (ClassType) rt;
+        var field = ctx.getClass(ct.name).scope.lookup(expr.name);
+        if (field.isPresent() && field.get().isVarSymbol()) {
+            var var = (VarSymbol) field.get();
+            if (var.isMemberVar()) {
+                expr.symbol = var;
+                expr.type = var.type;
+                if (!ctx.currentClass().type.subtypeOf(var.getOwner().type)) {
+                    // member vars are protected
+                    issue(new FieldNotAccessError(expr.pos, expr.name, ct.toString()));
                 }
-                else if(field.get().isMethodSymbol())
-                {
-                    var method = (MethodSymbol) field.get();
-                    expr.symbol = method;
-                    expr.type = method.type;
-                    expr.isMethod = true;
-                }
-                else {
-                    issue(new NotClassFieldError(expr.pos, expr.name, ct.toString()));
-                }
-            } else{
-                issue(new FieldNotFoundError(expr.pos, expr.name, ct.toString()));
             }
+        } else if (field.isEmpty()) {
+            issue(new FieldNotFoundError(expr.pos, expr.name, ct.toString()));
+        } else {
+            issue(new NotClassFieldError(expr.pos, expr.name, ct.toString()));
         }
     }
 
@@ -560,15 +399,9 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
     public void visitIndexSel(Tree.IndexSel expr, ScopeStack ctx) {
         expr.array.accept(this, ctx);
         expr.index.accept(this, ctx);
-
         var at = expr.array.type;
         var it = expr.index.type;
 
-        if(!at.noError())
-        {
-            expr.type = BuiltInType.ERROR;
-            return;
-        }
         if (!at.isArrayType()) {
             issue(new NotArrayError(expr.array.pos));
             expr.type = BuiltInType.ERROR;
@@ -584,209 +417,64 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
     @Override
     public void visitCall(Tree.Call expr, ScopeStack ctx) {
         expr.type = BuiltInType.ERROR;
-        
-        Tree.VarSel varsel;
-        Tree.Lambda lambda;
-        if(expr.expr instanceof Tree.VarSel)
-        {
-            varsel = (Tree.VarSel) expr.expr;
-            varsel.accept(this, ctx);
-            varsel.isCall = true;
-            var name = ((Tree.VarSel) expr.expr).name;
-            if(ctx.judgeContain(name))
-            {
-                issue(new UndeclVarError(expr.expr.pos, name));
-                return;
-            }
-            if (varsel.receiver.isPresent()) {
-                var receiver = varsel.receiver.get();
-                allowClassNameVar = true;
-                receiver.accept(this, ctx);
+        Type rt;
+        boolean thisClass = false;
 
-                allowClassNameVar = false;
-                if(!receiver.type.noError())
+        if (expr.receiver.isPresent()) {
+            var receiver = expr.receiver.get();
+            allowClassNameVar = true;
+            receiver.accept(this, ctx);
+            allowClassNameVar = false;
+            rt = receiver.type;
+
+            if (receiver instanceof Tree.VarSel) {
+                var v1 = (Tree.VarSel) receiver;
+                if (v1.isClassName) {
+                    // Special case: invoking a static method, like MyClass.foo()
+                    typeCall(expr, false, v1.name, ctx, true);
                     return;
-
-                if(receiver instanceof  Tree.This)
-                {
-                    typeCall(expr, true, ctx.currentClass().name, ctx,false);
-                }
-                else if (receiver instanceof Tree.VarSel) {
-                    var v1 = (Tree.VarSel) receiver;
-                    if (v1.isClassName) {
-                        // Special case: invoking a staStic method, like MyClass.foo()
-                        typeCall(expr, false, v1.name, ctx, ctx.currentMethod().isStatic());
-                    }
-                    else if(varsel.name.equals("length")) {
-                        if (v1.type.isArrayType())
-                        {
-                            if(!expr.args.isEmpty())
-                            {
-                                issue(new BadLengthArgError(expr.pos, expr.args.size()));
-                            }
-                            expr.isArrayLength = true;
-                            expr.type = BuiltInType.INT;
-                        }
-                        else
-                        {
-                            issue(new NotClassFieldError(expr.expr.pos, varsel.name, v1.type.toString()));
-                        }
-                    }
-                    else{
-                        if(v1.symbol.type.isClassType())
-                        {
-                            var classname = ((ClassType)v1.symbol.type).name;
-                            typeCall(expr, false, classname, ctx, false);
-                        }
-                    }
-                }
-                else if (receiver instanceof Tree.NewClass)
-                {
-                    var type = receiver.type;
-                    if(type.noError()&&type.isClassType())
-                    {
-                        boolean requireStatic = !((Tree.NewClass) receiver).symbol.name.equals(ctx.currentClass().name) && ctx.currentMethod().isStatic();
-                        typeCall(expr, false, ((Tree.NewClass) receiver).symbol.name, ctx, requireStatic);
-                    }
-                    else if(varsel.name.equals("length")) {
-                        if (receiver.type.isArrayType())
-                        {
-                            if(!expr.args.isEmpty())
-                            {
-                                issue(new BadLengthArgError(expr.pos, expr.args.size()));
-                            }
-                            expr.isArrayLength = true;
-                            expr.type = BuiltInType.INT;
-                        }
-                        else
-                        {
-                            issue(new NotClassFieldError(expr.expr.pos, varsel.name, receiver.type.toString()));
-                        }
-                    }
-                }
-                else if (receiver instanceof Tree.Call)
-                {
-                    var type = receiver.type;
-                    if(type.noError()&&type.isClassType())
-                    {
-                        boolean requireStatic = ((ClassType)type).name.equals(ctx.currentClass().name) && ctx.currentMethod().isStatic();
-                        typeCall(expr, false, ((ClassType)type).name, ctx, requireStatic);
-                    }
-                    else if(varsel.name.equals("length")) {
-                        if (receiver.type.isArrayType())
-                        {
-                            if(!expr.args.isEmpty())
-                            {
-                                issue(new BadLengthArgError(expr.pos, expr.args.size()));
-                            }
-                            expr.isArrayLength = true;
-                            expr.type = BuiltInType.INT;
-                        }
-                        else
-                        {
-                            issue(new NotClassFieldError(expr.expr.pos, varsel.name, receiver.type.toString()));
-                        }
-                    }
                 }
             }
-            else {
-                typeCall(expr, true, "", ctx, false);
-            }
+        } else {
+            thisClass = true;
+            expr.setThis();
+            rt = ctx.currentClass().type;
         }
-        else if(expr.expr instanceof Tree.Lambda)
-        {
-            lambda = (Tree.Lambda) expr.expr;
-            lambda.accept(this, ctx);
-            var returntype = ((FunType) lambda.type).returnType;
-            expr.type = returntype;
-            expr.symbol = lambda.symbol;
-            if(expr.args.size() != lambda.lambdaSymbol.argTypes.size())
-                issue(new BadCountArgLambdaError(expr.pos, lambda.lambdaSymbol.argTypes.size(), expr.args.size()));
-            var iter1 = lambda.lambdaSymbol.argTypes.iterator();
 
-            var args = expr.args;
-            for (var arg : args) {
-                arg.accept(this, ctx);
-            }
-
-            var iter2 = expr.args.iterator();
-            for (int i = 1; iter1.hasNext() && iter2.hasNext(); i++) {
-                Type t1 = iter1.next();
-                Tree.Expr e = iter2.next();
-                Type t2 = e.type;
-                if (t2.noError() && !t2.subtypeOf(t1)) {
-                    issue(new BadArgTypeError(e.pos, i, t2.toString(), t1.toString()));
+        if (rt.noError()) {
+            if (rt.isArrayType() && expr.methodName.equals("length")) { // Special case: array.length()
+                if (!expr.args.isEmpty()) {
+                    issue(new BadLengthArgError(expr.pos, expr.args.size()));
                 }
-            }
-        }
-        else if(expr.expr instanceof Tree.Call)
-        {
-            expr.expr.accept(this, ctx);
-            expr.symbol = ((Tree.Call) expr.expr).symbol;
-            if(!expr.expr.type.noError())
+                expr.isArrayLength = true;
+                expr.type = BuiltInType.INT;
                 return;
-            var args = expr.args;
-            for (var arg : args) {
-                arg.accept(this, ctx);
             }
 
-            var varselType = (FunType)expr.expr.type;
-            if (varselType.arity() != expr.args.size()) {
-                issue(new BadCountArgLambdaError(expr.pos, varselType.argTypes.size(), expr.args.size()));
+            if (rt.isClassType()) {
+                typeCall(expr, thisClass, ((ClassType) rt).name, ctx, false);
+            } else {
+                issue(new NotClassFieldError(expr.pos, expr.methodName, rt.toString()));
             }
-            var iter1 = varselType.argTypes.iterator();
-            var iter2 = expr.args.iterator();
-            for (int i = 1; iter1.hasNext() && iter2.hasNext(); i++) {
-                Type t1 = iter1.next();
-                Tree.Expr e = iter2.next();
-                Type t2 = e.type;
-                if (t2.noError() && !t2.subtypeOf(t1)) {
-                    issue(new BadArgTypeError(e.pos, i, t2.toString(), t1.toString()));
-                }
-            }
-            expr.type = ((FunType)(expr.expr.type)).returnType;
-        }
-        else if(expr.expr instanceof Tree.IndexSel)
-        {
-            var indexSel = (Tree.IndexSel) expr.expr;
-            indexSel.accept(this, ctx);
-            expr.expr.type = indexSel.type;
-            if(!expr.expr.type.isFuncType()) {
-                issue(new NotCallableError(expr.pos, expr.expr.type.toString()));
-            }
-            expr.type = BuiltInType.ERROR;
-        }
-        else
-        {
-            expr.expr.accept(this, ctx);
-            issue(new NotCallableError(expr.pos, expr.expr.type.toString()));
         }
     }
 
     private void typeCall(Tree.Call call, boolean thisClass, String className, ScopeStack ctx, boolean requireStatic) {
         var clazz = thisClass ? ctx.currentClass() : ctx.getClass(className);
-        var varSel = (Tree.VarSel) call.expr;
-        String methodName = varSel.name;
-        var symbol = clazz.scope.lookup(methodName);
-
-        var localSymbol = ctx.lookupBefore(methodName, call.pos);
-
+        var symbol = clazz.scope.lookup(call.methodName);
         if (symbol.isPresent()) {
             if (symbol.get().isMethodSymbol()) {
                 var method = (MethodSymbol) symbol.get();
                 call.symbol = method;
-                ((Tree.VarSel) call.expr).symbol = method;
-                ((Tree.VarSel) call.expr).isMethod = true;
-
                 call.type = method.type.returnType;
                 if (requireStatic && !method.isStatic()) {
-                    issue(new NotClassFieldError(call.expr.pos, methodName, clazz.type.toString()));
+                    issue(new NotClassFieldError(call.pos, call.methodName, clazz.type.toString()));
                     return;
                 }
 
                 // Cannot call this's member methods in a static method
                 if (thisClass && ctx.currentMethod().isStatic() && !method.isStatic()) {
-                    issue(new RefNonStaticError(call.expr.pos, ctx.currentMethod().name, method.name));
+                    issue(new RefNonStaticError(call.pos, ctx.currentMethod().name, method.name));
                 }
 
                 // typing args
@@ -799,7 +487,6 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                 if (method.type.arity() != args.size()) {
                     issue(new BadArgCountError(call.pos, method.name, method.type.arity(), args.size()));
                 }
-
                 var iter1 = method.type.argTypes.iterator();
                 var iter2 = call.args.iterator();
                 for (int i = 1; iter1.hasNext() && iter2.hasNext(); i++) {
@@ -810,90 +497,11 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
                         issue(new BadArgTypeError(e.pos, i, t2.toString(), t1.toString()));
                     }
                 }
+            } else {
+                issue(new NotClassMethodError(call.pos, call.methodName, clazz.type.toString()));
             }
-            else if(symbol.get().type.isFuncType())
-            {
-                var functype = (FunType) symbol.get().type;
-                var symbolGet = symbol.get();
-                call.type = functype.returnType;
-                call.symbol = symbol.get();
-
-                ((Tree.VarSel) call.expr).symbol = symbol.get();
-
-                // typing args
-                var args = call.args;
-                for (var arg : args) {
-                    arg.accept(this, ctx);
-                }
-
-                // check signature compatibility
-                if (functype.arity() != args.size()) {
-                    issue(new BadArgCountError(call.pos, symbolGet.name, functype.arity(), args.size()));
-                }
-
-                var iter1 = functype.argTypes.iterator();
-                var iter2 = call.args.iterator();
-                for (int i = 1; iter1.hasNext() && iter2.hasNext(); i++) {
-                    Type t1 = iter1.next();
-                    Tree.Expr e = iter2.next();
-                    Type t2 = e.type;
-                    if (t2.noError() && !t2.subtypeOf(t1)) {
-                        issue(new BadArgTypeError(e.pos, i, t2.toString(), t1.toString()));
-                    }
-                }
-            }
-            else {
-                issue(new NotCallableError(call.pos, symbol.get().type.toString()));
-            }
-        } else if(localSymbol.isPresent()) {
-            var localSymbolGet = localSymbol.get();
-            if(!localSymbolGet.type.noError())
-                return;
-            if(localSymbolGet.isMethodSymbol() || (localSymbolGet.type.isFuncType()))
-            {
-                var localSymbolType = (FunType)localSymbolGet.type;
-                call.type = localSymbolType.returnType;
-                call.symbol = localSymbolGet;
-                ((Tree.VarSel) call.expr).symbol = localSymbolGet;
-                if(localSymbolGet.isMethodSymbol())
-                {
-                    if(((MethodSymbol)localSymbolGet).isStatic())
-                        ((Tree.VarSel) call.expr).symbol.isStatic = true;
-                }
-                // typing args
-                var args = call.args;
-                for (var arg : args) {
-                    arg.accept(this, ctx);
-                }
-
-                if (localSymbolType.argTypes.size() != args.size()) {
-                    issue(new BadArgCountError(call.pos, localSymbolGet.name, localSymbolType.argTypes.size(), args.size()));
-                }
-
-                var iter1 = localSymbolType.argTypes.iterator();
-                var iter2 = call.args.iterator();
-                for (int i = 1; iter1.hasNext() && iter2.hasNext(); i++) {
-                    Type t1 = iter1.next();
-                    Tree.Expr e = iter2.next();
-                    Type t2 = e.type;
-                    if (t2.noError() && !t2.subtypeOf(t1)) {
-                        issue(new BadArgTypeError(e.pos, i, t2.toString(), t1.toString()));
-                    }
-                }
-
-            }
-            else if(!localSymbolGet.type.isVoidType())
-            {
-                call.type = BuiltInType.ERROR;
-                issue(new NotCallableError(call.pos, localSymbolGet.type.toString()));
-            }
-
-        }
-        else {
-            if(!thisClass)
-                issue(new FieldNotFoundError(call.expr.pos, methodName, clazz.type.toString()));
-            else
-                issue(new UndeclVarError(call.expr.pos, methodName));
+        } else {
+            issue(new FieldNotFoundError(call.pos, call.methodName, clazz.type.toString()));
         }
     }
 
@@ -933,270 +541,20 @@ public class Typer extends Phase<Tree.TopLevel, Tree.TopLevel> implements TypeLi
 
     @Override
     public void visitLocalVarDef(Tree.LocalVarDef stmt, ScopeStack ctx) {
-        if (!stmt.isVar&&stmt.initVal.isEmpty()) return;
+        if (stmt.initVal.isEmpty()) return;
 
-        Tree.Expr initVal;
-        if(!stmt.isVar)
-            initVal = stmt.initVal.get();
-        else
-            initVal = stmt.VarExpr;
-
+        var initVal = stmt.initVal.get();
         localVarDefPos = Optional.ofNullable(stmt.id.pos);
-        if(initVal instanceof Tree.Lambda)
-            ctx.addDefining(stmt.name, stmt.pos);
-
         initVal.accept(this, ctx);
-        if(initVal instanceof Tree.Lambda)
-            ctx.removeDefining(stmt.name);
-
         localVarDefPos = Optional.empty();
+        var lt = stmt.symbol.type;
+        var rt = initVal.type;
 
-        if(!stmt.isVar)
-        {
-            var lt = stmt.symbol.type;
-            var rt = initVal.type;
-
-
-            if (lt.noError() && !rt.subtypeOf(lt)) {
-                issue(new IncompatBinOpError(stmt.assignPos, lt.toString(), "=", rt.toString()));
-            }
+        if (lt.noError() && (lt.isFuncType() || !rt.subtypeOf(lt))) {
+            issue(new IncompatBinOpError(stmt.assignPos, lt.toString(), "=", rt.toString()));
         }
-        else
-        {
-            if(initVal.type.isVoidType())
-            {
-                issue(new AssignVarVoidError(stmt.id.pos, stmt.id.name));
-            }
-
-            stmt.symbol.type = initVal.type;
-        }
-
     }
 
-    public Type getSuperior(List<Type> typeList)
-    {
-        if(typeList.size()==0)
-            return BuiltInType.VOID;
-        var candidate = typeList.get(0);
-        if(candidate.isBaseType() || candidate.isVoidType() || candidate.isArrayType())
-        {
-            for(var type:typeList)
-            {
-                if(!type.eq(candidate))
-                    return BuiltInType.ERROR;
-            }
-            return candidate;
-        }
-        else if (candidate.isClassType())
-        {
-            var classType = (ClassType) candidate;
-            while(true){
-                boolean hasError = false;
-                for(var type:typeList)
-                {
-                    if(!type.subtypeOf(classType))
-                    {
-                        hasError = true;
-                        break;
-                    }
-                }
-                if(hasError)
-                {
-                    if(classType.superType.isPresent())
-                        classType = classType.superType.get();
-                    else
-                        return BuiltInType.ERROR;
-                }
-                else return classType;
-            }
-        }
-        else if(candidate.isFuncType())
-        {
-            var functype = (FunType) candidate;
-            ArrayList<ArrayList<Type>> typeListList = new ArrayList<>();
-            ArrayList<Type> returnTypeList = new ArrayList<>();
-            for(var type:typeList)
-            {
-                if(!type.isFuncType())
-                    return BuiltInType.ERROR;
-                else {
-                    var temp = (FunType) type;
-                    if(temp.argTypes.size() != functype.argTypes.size())
-                        return BuiltInType.ERROR;
-                }
-            }
-            for(int i = 0;i < functype.argTypes.size();i++)
-            {
-                ArrayList<Type> tempList = new ArrayList<>();
-                typeListList.add(tempList);
-            }
-            for(var type:typeList)
-            {
-                var temp = (FunType) type;
-                returnTypeList.add(((FunType) type).returnType);
-                int index = 0;
-                for(var paraType:temp.argTypes)
-                {
-                    var list = typeListList.get(index);
-                    list.add(paraType);
-                    typeListList.set(index, list);
-                    index += 1;
-                }
-            }
-            ArrayList<Type> finalPara = new ArrayList<>();
-            for(var list:typeListList)
-            {
-                var ans = getInferior(list);
-
-                if(ans.eq(BuiltInType.ERROR))
-                {
-                    return BuiltInType.ERROR;
-                }
-
-                finalPara.add(ans);
-            }
-            var finalReturn = getSuperior(returnTypeList);
-            if(finalReturn.noError())
-                return new FunType(finalReturn, finalPara);
-            else
-                return BuiltInType.ERROR;
-        }
-        else if(candidate.eq(BuiltInType.NULL))
-        {
-            if(typeList.size() == 1)
-                return BuiltInType.NULL;
-            else
-            {
-                typeList.remove(0);
-                return getSuperior(typeList);
-            }
-        }
-        return candidate;
-    }
-
-    public Type getInferior(List<Type> typeList)
-    {
-        var candidate = typeList.get(0);
-        if(candidate.isBaseType() || candidate.isVoidType() || candidate.isArrayType())
-        {
-            for(var type:typeList)
-            {
-                if(!type.eq(candidate))
-                    return BuiltInType.ERROR;
-            }
-            return candidate;
-        }
-        else if (candidate.isClassType())
-        {
-            for(var type:typeList)
-            {
-                boolean isInf = true;
-                for(var typeR:typeList)
-                {
-                    if(!type.subtypeOf(typeR))
-                    {
-                        isInf = false;
-                        break;
-                    }
-                }
-                if(isInf)
-                    return type;
-
-            }
-            return BuiltInType.ERROR;
-        }
-        else if(candidate.isFuncType())
-        {
-            var functype = (FunType) candidate;
-            ArrayList<ArrayList<Type>> typeListList = new ArrayList<>();
-            ArrayList<Type> returnTypeList = new ArrayList<>();
-            for(var type:typeList)
-            {
-                if(!type.isFuncType())
-                    return BuiltInType.ERROR;
-                else {
-                    var temp = (FunType) type;
-                    if(temp.argTypes.size() != functype.argTypes.size())
-                        return BuiltInType.ERROR;
-                }
-            }
-            for(int i = 0;i < functype.argTypes.size();i++)
-            {
-                ArrayList<Type> tempList = new ArrayList<>();
-                typeListList.add(tempList);
-            }
-            for(var type:typeList)
-            {
-                var temp = (FunType) type;
-                returnTypeList.add(((FunType) type).returnType);
-                int index = 0;
-                for(var paraType:temp.argTypes)
-                {
-                    var list = typeListList.get(index);
-                    list.add(paraType);
-                    typeListList.set(index, list);
-                    index += 1;
-                }
-            }
-            ArrayList<Type> finalPara = new ArrayList<>();
-            for(var list:typeListList)
-            {
-                var ans = getSuperior(list);
-                if(ans.eq(BuiltInType.ERROR))
-                    return BuiltInType.ERROR;
-                finalPara.add(ans);
-            }
-            var finalReturn = getInferior(returnTypeList);
-            if(finalReturn.noError())
-                return new FunType(finalReturn, finalPara);
-            else
-                return BuiltInType.ERROR;
-        }
-        else if(candidate.eq(BuiltInType.NULL))
-            return BuiltInType.NULL;
-        return candidate;
-    }
-
-    @Override
-    public void visitLambda(Tree.Lambda lambda, ScopeStack ctx) {
-        ctx.open(lambda.scope);
-        if(lambda.isBlock)
-        {
-            lambda.body.accept(this,ctx);
-            if(lambda.lambdaSymbol.returnTypeList.size() == 0) {
-                lambda.lambdaSymbol.setReturnType(BuiltInType.VOID);
-                lambda.type = lambda.lambdaSymbol.type;
-            }
-            else {
-                boolean reported = false;
-                for(var type:lambda.lambdaSymbol.returnTypeList)
-                {
-                    if(!type.isVoidType() && !lambda.body.returns && !reported)
-                    {
-                        issue(new MissingReturnError(lambda.body.pos));
-                        reported = true;
-                    }
-                }
-                var returnType = getSuperior(lambda.lambdaSymbol.returnTypeList);
-                if(returnType.noError())
-                {
-                    lambda.lambdaSymbol.setReturnType(returnType);
-                    lambda.type = lambda.lambdaSymbol.type;
-                }
-                else
-                    issue(new IncompatibleReturnError(lambda.body.pos));
-            }
-        }
-        else
-        {
-            lambda.expr.accept(this, ctx);
-            lambda.lambdaSymbol.setReturnType(lambda.expr.type);
-            lambda.type = lambda.lambdaSymbol.type;
-        }
-        lambda.symbol = lambda.lambdaSymbol;
-        ctx.close();
-
-    }
     // Only usage: check if an initializer cyclically refers to the declared variable, e.g. var x = x + 1
     private Optional<Pos> localVarDefPos = Optional.empty();
 }

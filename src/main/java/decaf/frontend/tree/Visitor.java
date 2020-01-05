@@ -38,14 +38,6 @@ public interface Visitor<C> {
         visitOthers(that, ctx);
     }
 
-    default void visitLambda(Tree.Lambda that, C ctx) {
-        visitOthers(that, ctx);
-    }
-
-    default void visitTFunc(Tree.TFunc that, C ctx) {
-        visitOthers(that, ctx);
-    }
-
     default void visitTVoid(Tree.TVoid that, C ctx) {
         visitOthers(that, ctx);
     }

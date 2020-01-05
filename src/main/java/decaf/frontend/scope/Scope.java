@@ -23,7 +23,7 @@ import java.util.*;
 public abstract class Scope implements Iterable<Symbol> {
 
     public enum Kind {
-        GLOBAL, CLASS, FORMAL, LOCAL, LAMBDA
+        GLOBAL, CLASS, FORMAL, LOCAL
     }
 
     public final Kind kind;
@@ -99,19 +99,9 @@ public abstract class Scope implements Iterable<Symbol> {
         return false;
     }
 
-    public boolean isLambdaScope() {
-        return false;
-    }
-
-    public boolean isFormalOrLocalScopeOrLambda() {
-        return isFormalScope() || isLocalScope() || isLambdaScope();
+    public boolean isFormalOrLocalScope() {
+        return isFormalScope() || isLocalScope();
     }
 
     protected Map<String, Symbol> symbols = new TreeMap<>();
-
-    public void showSymbol(){
-        for(var symbol:symbols.values())
-            System.out.println(symbol.toString());
-    }
-
 }
