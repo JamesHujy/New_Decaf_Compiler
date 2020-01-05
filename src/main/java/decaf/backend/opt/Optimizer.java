@@ -1,12 +1,17 @@
 package decaf.backend.opt;
 
+import decaf.backend.dataflow.CFGBuilder;
+import decaf.backend.dataflow.LivenessAnalyzer;
 import decaf.driver.Config;
 import decaf.driver.Phase;
+import decaf.lowlevel.log.Log;
 import decaf.lowlevel.tac.Simulator;
+import decaf.lowlevel.tac.TacInstr;
 import decaf.lowlevel.tac.TacProg;
 
 import java.io.FileNotFoundException;
 import java.io.PrintWriter;
+import java.util.Optional;
 
 /**
  * TAC optimization phase: optimize a TAC program.
@@ -20,6 +25,21 @@ public class Optimizer extends Phase<TacProg, TacProg> {
 
     @Override
     public TacProg transform(TacProg input) {
+        Log.info("Phase: opt");
+
+        var analyzer = new LivenessAnalyzer<TacInstr>();
+        for(var func: input.funcs)
+        {
+            var cfg = new CFGBuilder<TacInstr>().buildFrom(func.getInstrSeq());
+            analyzer.accept(cfg);
+
+            var removedList = analyzer.getRemovedInstr();
+            for(var instr:removedList)
+            {
+                func.getInstrSeq().remove(instr);
+                Log.info("remove instr:" + instr);
+            }
+        }
         return input;
     }
 
