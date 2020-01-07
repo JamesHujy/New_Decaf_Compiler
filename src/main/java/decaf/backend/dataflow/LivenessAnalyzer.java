@@ -103,7 +103,6 @@ public class LivenessAnalyzer<I extends PseudoInstr> implements Consumer<CFG<I>>
                 var defInstr = instr.getWritten();
                 loc.liveOut.retainAll(defInstr);
                 if(loc.liveOut.isEmpty()) {
-
                     if (instr instanceof TacInstr.DirectCall) {
                         ((TacInstr.DirectCall) loc.instr).dst = Optional.empty();
                     } else if (instr instanceof TacInstr.IndirectCall) {
@@ -114,7 +113,6 @@ public class LivenessAnalyzer<I extends PseudoInstr> implements Consumer<CFG<I>>
                         removedInstr.add(instr);
                         continue;
                     }
-
                 }
             }
 
