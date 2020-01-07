@@ -1,10 +1,7 @@
 package decaf.backend.dataflow;
 
 import decaf.lowlevel.instr.PseudoInstr;
-import decaf.lowlevel.tac.TacInstr;
 
-import java.util.ArrayList;
-import java.util.Optional;
 import java.util.TreeSet;
 import java.util.function.Consumer;
 
@@ -15,7 +12,6 @@ import java.util.function.Consumer;
  */
 public class LivenessAnalyzer<I extends PseudoInstr> implements Consumer<CFG<I>> {
 
-    private ArrayList<I> removedInstr = new ArrayList<>();
     @Override
     public void accept(CFG<I> graph) {
         for (var bb : graph.nodes) {
@@ -96,34 +92,10 @@ public class LivenessAnalyzer<I extends PseudoInstr> implements Consumer<CFG<I>>
             loc.liveOut = new TreeSet<>(liveOut);
             // Order is important here, because in an instruction, one temp can be both read and written, e.g.
             // in `_T1 = _T1 + _T2`, `_T1` must be alive before execution.
-
-            var instr = loc.instr;
-            if(!instr.getWritten().isEmpty())
-            {
-                var defInstr = instr.getWritten();
-                loc.liveOut.retainAll(defInstr);
-                if(loc.liveOut.isEmpty()) {
-                    if (instr instanceof TacInstr.DirectCall) {
-                        ((TacInstr.DirectCall) loc.instr).dst = Optional.empty();
-                    } else if (instr instanceof TacInstr.IndirectCall) {
-                        ((TacInstr.IndirectCall) loc.instr).dst = Optional.empty();
-                    }
-                    else
-                    {
-                        removedInstr.add(instr);
-                        continue;
-                    }
-                }
-            }
-
-            liveOut.removeAll(instr.getWritten());
-            liveOut.addAll(instr.getRead());
+            liveOut.removeAll(loc.instr.getWritten());
+            liveOut.addAll(loc.instr.getRead());
             loc.liveIn = new TreeSet<>(liveOut);
         }
         // assert liveIn == bb.liveIn
-    }
-
-    public ArrayList<I> getRemovedInstr(){
-        return removedInstr;
     }
 }
